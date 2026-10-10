@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy via SSH to VPS
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST || '31.97.180.176' }}
           username: ${{ secrets.VPS_USERNAME || 'root' }}
@@ -27,17 +27,20 @@ jobs:
             echo "=== [GitHub Actions CI/CD] Starting VPS Deployment ==="
             cd /opt/ai-story-harness
             
-            # Initialize git repo if not already tracked
+            # Clean any stale git locks
+            rm -f .git/index.lock .git/FETCH_HEAD.lock
+
+            # Initialize git tracking if not already tracked
             if [ ! -d ".git" ]; then
               git init
               git remote add origin https://github.com/zubaerisla-create/ai-harness-video-generator.git || true
             fi
 
-            # Pull latest changes from main branch
+            # Fetch and reset to latest main commit
             git fetch origin main
             git reset --hard origin/main
             
             # Execute deployment script
             chmod +x scripts/deploy.sh
-            ./scripts/deploy.sh
+            bash scripts/deploy.sh
             echo "=== [GitHub Actions CI/CD] Deployment Finished Successfully ==="
