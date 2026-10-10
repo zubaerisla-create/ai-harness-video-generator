@@ -173,7 +173,15 @@ function StudioContent() {
         setStatusMsg("Video generation task submitted! Real-time progress is streaming below.");
       } else {
         const errData = await res.json().catch(() => ({}));
-        alert(errData.detail || "Failed to submit job to server queue.");
+        let errMsg = "Failed to submit job to server queue.";
+        if (typeof errData.detail === "string") {
+          errMsg = errData.detail;
+        } else if (Array.isArray(errData.detail)) {
+          errMsg = errData.detail
+            .map((e: any) => `${e.loc?.filter((x: any) => x !== "body").join(".") || "field"}: ${e.msg}`)
+            .join(", ");
+        }
+        alert(errMsg);
       }
     } catch {
       alert("Network error: Could not reach video synthesis server.");

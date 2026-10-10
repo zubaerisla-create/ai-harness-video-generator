@@ -24,6 +24,7 @@ async def health_check():
     }
 
 @router.get("/resources", response_model=SystemResources)
+@router.get("/resources/", response_model=SystemResources, include_in_schema=False)
 async def get_system_resources(user=Depends(get_optional_user)):
     # Memory
     mem = psutil.virtual_memory()
@@ -70,6 +71,7 @@ async def get_system_resources(user=Depends(get_optional_user)):
     )
 
 @router.get("/stats", response_model=SystemStats)
+@router.get("/stats/", response_model=SystemStats, include_in_schema=False)
 async def get_system_stats(
     db: AsyncSession = Depends(get_db),
     user=Depends(get_optional_user)

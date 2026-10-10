@@ -11,16 +11,20 @@ from backend.app.database.repository import JobRepository
 from backend.app.schemas.video import JobCreateRequest, JobResponse, SceneResponse
 from backend.app.api.auth import get_optional_user
 
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Body
+
 logger = logging.getLogger("ai_harness.api.jobs")
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
 @router.post("", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=JobResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def create_job(
-    request: JobCreateRequest,
+    request: Optional[JobCreateRequest] = Body(default=None),
     db: AsyncSession = Depends(get_db),
     user=Depends(get_optional_user)
 ):
+    if request is None:
+        request = JobCreateRequest()
     # Check free disk space before admitting job
     total, used, free = shutil.disk_usage(settings.OUTPUT_DIR)
     free_gb = free / (1024 ** 3)

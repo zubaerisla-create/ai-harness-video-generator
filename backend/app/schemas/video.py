@@ -1,18 +1,69 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 
 class JobCreateRequest(BaseModel):
-    prompt: str = Field(..., min_length=3, max_length=2000, description="The creative story prompt")
-    style: str = Field(default="business_strategy", description="Story & visual style: business_strategy, ai_news, sci_fi_concept, emerging_tech, future_predictions")
-    requested_duration: int = Field(default=45, ge=15, le=300, description="Target duration in seconds (30-60s optimal for Reels & Shorts)")
-    requested_resolution: str = Field(default="720p", description="Resolution: 720p or 1080p")
-    aspect_ratio: str = Field(default="9:16", description="Aspect ratio: 9:16 (vertical), 16:9, or 1:1")
-    enable_narration: bool = Field(default=True, description="Generate audio narration via TTS")
-    enable_subtitles: bool = Field(default=True, description="Render burn-in synchronized subtitles")
-    enable_bgm: bool = Field(default=True, description="Mix royalty-free background music")
+    prompt: Optional[str] = Field(default="The Future of Artificial Intelligence and Emerging Technology", description="The creative story prompt")
+    style: Optional[str] = Field(default="business_strategy", description="Story & visual style: business_strategy, ai_news, sci_fi_concept, emerging_tech, future_predictions")
+    requested_duration: Optional[Union[int, str, float]] = Field(default=45, description="Target duration in seconds (15-300)")
+    requested_resolution: Optional[str] = Field(default="720p", description="Resolution: 720p or 1080p")
+    aspect_ratio: Optional[str] = Field(default="9:16", description="Aspect ratio: 9:16 (vertical), 16:9, or 1:1")
+    enable_narration: Optional[Union[bool, str, int]] = Field(default=True, description="Generate audio narration via TTS")
+    enable_subtitles: Optional[Union[bool, str, int]] = Field(default=True, description="Render burn-in synchronized subtitles")
+    enable_bgm: Optional[Union[bool, str, int]] = Field(default=True, description="Mix royalty-free background music")
     visual_provider: Optional[str] = Field(default=None, description="Override visual provider (storyboard_canvas, comfyui, diffusers)")
     tts_voice: Optional[str] = Field(default=None, description="TTS voice override")
+
+    @field_validator("prompt", mode="before")
+    @classmethod
+    def validate_prompt(cls, v: Any) -> str:
+        if not v:
+            return "The Future of Artificial Intelligence and Emerging Technology"
+        s = str(v).strip()
+        return s if len(s) > 0 else "The Future of Artificial Intelligence and Emerging Technology"
+
+    @field_validator("requested_duration", mode="before")
+    @classmethod
+    def validate_duration(cls, v: Any) -> int:
+        if v is None:
+            return 45
+        try:
+            val = int(float(v))
+            return max(15, min(300, val))
+        except Exception:
+            return 45
+
+    @field_validator("enable_narration", "enable_subtitles", "enable_bgm", mode="before")
+    @classmethod
+    def validate_bool(cls, v: Any) -> bool:
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, (int, float)):
+            return bool(v)
+        if isinstance(v, str):
+            return v.lower() in ("true", "1", "yes", "t")
+        return True
+
+    @field_validator("style", mode="before")
+    @classmethod
+    def validate_style(cls, v: Any) -> str:
+        if not v or not isinstance(v, str):
+            return "business_strategy"
+        s = v.strip().lower()
+        valid = {"business_strategy", "ai_news", "sci_fi_concept", "emerging_tech", "future_predictions"}
+        return s if s in valid else "business_strategy"
+
+    @field_validator("requested_resolution", mode="before")
+    @classmethod
+    def validate_resolution(cls, v: Any) -> str:
+        s = str(v or "720p").lower().strip()
+        return s if s in ("720p", "1080p") else "720p"
+
+    @field_validator("aspect_ratio", mode="before")
+    @classmethod
+    def validate_aspect_ratio(cls, v: Any) -> str:
+        s = str(v or "9:16").strip()
+        return s if s in ("9:16", "16:9", "1:1") else "9:16"
 
 class ScenePlanItem(BaseModel):
     sequence_number: int

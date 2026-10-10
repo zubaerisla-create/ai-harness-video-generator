@@ -67,6 +67,11 @@ app.include_router(jobs_router)
 app.include_router(videos_router)
 app.include_router(system_router)
 
+from backend.app.database.session import get_db
+from backend.app.api.system import get_system_stats, get_system_resources
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
+
 @app.get("/api/health")
 async def api_health():
     return {
@@ -74,6 +79,14 @@ async def api_health():
         "service": "AI Story Video Generation Harness",
         "version": "1.0.0"
     }
+
+@app.get("/api/stats")
+async def api_stats_alias(db: AsyncSession = Depends(get_db)):
+    return await get_system_stats(db=db)
+
+@app.get("/api/resources")
+async def api_resources_alias():
+    return await get_system_resources()
 
 @app.get("/")
 @app.get("/dashboard")
