@@ -6,18 +6,18 @@ import random
 import urllib.parse
 import urllib.request
 import logging
-import httpx
+import json
 import asyncio
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Tuple, Optional, Dict, Any
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from typing import Tuple, Optional, Dict, Any, List
+from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 
 from backend.app.config import settings
 
 logger = logging.getLogger("ai_harness.image_generator")
 
-# High-Engagement Visual Directives
+# Visual style directives
 STYLE_VISUAL_ENHANCERS: Dict[str, str] = {
     "business_strategy": (
         "cinematic photorealistic 35mm film still, architectural glass monolith skyscraper, "
@@ -60,9 +60,8 @@ class VisualProviderBase(ABC):
 
 class PollinationsDiffusionProvider(VisualProviderBase):
     """
-    State-of-the-art free AI Diffusion provider using Pollinations / Flux.
-    Generates genuine, high-definition, photorealistic or stylized visuals
-    directly tailored to the exact scene prompt. Zero API key, 100% free, fast.
+    Tier 1: Free AI Diffusion provider using Pollinations.
+    Uses free 512x896 endpoint (avoids 402 resolution blocks) and upscales to 9:16 vertical (720x1280).
     """
     def __init__(self):
         self.backend_name = "pollinations_flux"
@@ -80,65 +79,65 @@ class PollinationsDiffusionProvider(VisualProviderBase):
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Generate a distinct random seed for every scene
-        seed = random.SystemRandom().randint(1000, 99999999)
-
-        # Detect if prompt requests anime / cartoon / illustration or photorealism
-        p_lower = prompt.lower()
-        if any(w in p_lower for w in ["anime", "manga", "cartoon", "lumi", "kai", "dragon", "drawn"]):
-            enhancer = "masterpiece, high quality Japanese fantasy anime art, Makoto Shinkai style, vibrant colors, expressive character, detailed cinematic background, 8k"
-        else:
-            enhancer = STYLE_VISUAL_ENHANCERS.get(style.lower(), STYLE_VISUAL_ENHANCERS["business_strategy"])
-
         clean_p = " ".join(prompt.replace("{", " ").replace("}", " ").replace('"', ' ').replace("\n", " ").split())
-        
-        parts = [clean_p]
-        if character_details and character_details.strip():
-            parts.append(character_details.strip())
-        parts.append(enhancer)
-        parts.append("9:16 vertical composition, clean image, no text watermark")
+        p_lower = clean_p.lower()
 
-        full_prompt = ", ".join(parts)[:240]
+        # Build prompt
+        parts = [clean_p[:110]]
+        if character_details and character_details.strip():
+            parts.append(character_details.strip()[:60])
+
+        if any(w in p_lower for w in ["anime", "manga", "cartoon", "lumi", "kai", "dragon", "drawn"]):
+            parts.append("anime fantasy masterpiece 8k")
+        else:
+            parts.append("cinematic 8k photorealistic")
+
+        full_prompt = ", ".join(parts)[:160]
         encoded_prompt = urllib.parse.quote(full_prompt)
 
-        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&nologo=true&seed={seed}"
+        # Use 512x896 free tier resolution to prevent 402 Payment Required errors
+        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=896&nologo=true"
 
         data = await asyncio.to_thread(self._fetch_image_sync, url)
         if data:
-            img = Image.open(io.BytesIO(data)).convert("RGB")
-            if img.size != (width, height):
-                img = img.resize((width, height), Image.Resampling.LANCZOS)
-            img.save(output_path, "JPEG", quality=92)
-            logger.info(f"Pollinations visual synthesized for scene {scene_index} (seed={seed})")
-            return True, self.backend_name, f"Rendered Flux diffusion visual for scene {scene_index}"
+            try:
+                img = Image.open(io.BytesIO(data)).convert("RGB")
+                if img.size != (width, height):
+                    img = img.resize((width, height), Image.Resampling.LANCZOS)
+                img.save(output_path, "JPEG", quality=92)
+                logger.info(f"Pollinations visual synthesized for scene {scene_index}")
+                return True, self.backend_name, f"Rendered Flux diffusion visual for scene {scene_index}"
+            except Exception as parse_err:
+                logger.warning(f"Pollinations image parse error: {parse_err}")
 
-        return False, self.backend_name, "Pollinations request timed out or unavailable"
+        return False, self.backend_name, "Pollinations request skipped or unavailable"
 
     def _fetch_image_sync(self, url: str) -> Optional[bytes]:
         req = urllib.request.Request(
             url,
             headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Referer": "https://pollinations.ai/"
             }
         )
         try:
-            with urllib.request.urlopen(req, timeout=18.0) as resp:
+            with urllib.request.urlopen(req, timeout=14.0) as resp:
                 if resp.status == 200:
                     content = resp.read()
                     if len(content) > 5000:
                         return content
         except Exception as e:
-            logger.warning(f"Pollinations fetch exception: {e}")
+            logger.debug(f"Pollinations fetch attempt: {e}")
         return None
 
-class AIHordeDiffusionProvider(VisualProviderBase):
+class OpenverseSemanticProvider(VisualProviderBase):
     """
-    Secondary AI diffusion provider via open AI Horde distributed cluster.
+    Tier 2: Semantic Image Provider querying Openverse (700M+ Creative Commons image archive).
+    Extracts core thematic scene entities (dragon, starry night, mountain, bridge, city, lab)
+    and formats the image into a vertical 9:16 cinematographic frame.
     """
-    def __init__(self, api_key: str = "0000000000"):
-        self.backend_name = "ai_horde"
-        self.api_key = api_key
-        self.client_agent = "AIStoryHarness:2.0:cinematic"
+    def __init__(self):
+        self.backend_name = "openverse_archive"
 
     async def generate_image(
         self,
@@ -153,71 +152,113 @@ class AIHordeDiffusionProvider(VisualProviderBase):
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        enhancer = STYLE_VISUAL_ENHANCERS.get(style.lower(), STYLE_VISUAL_ENHANCERS["business_strategy"])
-        cleaned = " ".join(str(prompt).replace("{", " ").replace("}", " ").replace('"', ' ').split())
-        seed = random.SystemRandom().randint(10000, 9999999)
-        full_prompt = f"{cleaned}, {enhancer}, photorealistic, clean composition, no text, no captions, no watermark"
+        p_lower = prompt.lower()
+        search_terms = self._extract_keywords(p_lower, style)
 
-        submit_url = "https://aihorde.net/api/v2/generate/async"
-        headers = {
-            "apikey": self.api_key,
-            "Client-Agent": self.client_agent,
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "prompt": full_prompt[:450],
-            "params": {
-                "steps": 16,
-                "n": 1,
-                "sampler_name": "k_euler_a",
-                "width": 512,
-                "height": 896,
-                "cfg_scale": 7.0,
-                "seed": str(seed),
-                "karras": True
+        for term in search_terms:
+            data = await asyncio.to_thread(self._search_and_download, term, width, height)
+            if data:
+                try:
+                    data.save(output_path, "JPEG", quality=92)
+                    logger.info(f"Openverse semantic visual fetched for scene {scene_index} (keyword: '{term}')")
+                    return True, self.backend_name, f"Found semantic visual for '{term}'"
+                except Exception as e:
+                    logger.warning(f"Error saving Openverse image: {e}")
+
+        return False, self.backend_name, "Openverse yielded no suitable visual"
+
+    def _extract_keywords(self, p: str, style: str) -> List[str]:
+        terms = []
+        if any(w in p for w in ["dragon", "lumi"]):
+            terms.extend(["fantasy dragon", "dragon art", "mystical dragon"])
+        if any(w in p for w in ["bridge"]):
+            terms.extend(["ancient bridge", "fantasy bridge", "stone bridge"])
+        if any(w in p for w in ["forest", "tree", "woods"]):
+            terms.extend(["enchanted forest", "magical forest", "misty forest"])
+        if any(w in p for w in ["mountain", "cliff", "shadow creature", "monster"]):
+            terms.extend(["dark mountain", "dramatic mountain peak", "rocky mountain"])
+        if any(w in p for w in ["star", "night", "sky", "galaxy"]):
+            terms.extend(["starry night sky", "milky way stars", "night sky"])
+        if any(w in p for w in ["light", "burst", "defeat", "celebrat", "sun", "dawn"]):
+            terms.extend(["golden light magic", "fireworks night", "golden sunset"])
+        if any(w in p for w in ["village", "town", "house"]):
+            terms.extend(["peaceful village night", "old village", "fantasy town"])
+        if any(w in p for w in ["robot", "cyber", "ai", "hologram", "future"]):
+            terms.extend(["cyberpunk neon city", "futuristic robot", "high tech lab"])
+        if any(w in p for w in ["business", "money", "corporate", "stock", "market"]):
+            terms.extend(["skyscraper skyline", "financial district", "modern corporate building"])
+
+        if not terms:
+            style_defaults = {
+                "business_strategy": ["modern skyscraper skyline", "executive office architecture"],
+                "ai_news": ["futuristic technology laboratory", "digital neural network"],
+                "sci_fi_concept": ["deep space nebula galaxy", "futuristic cosmic planet"],
+                "emerging_tech": ["high tech cleanroom", "microchip technology"],
+                "future_predictions": ["futuristic smart city", "biophilic modern architecture"]
             }
-        }
+            terms = style_defaults.get(style.lower(), ["dramatic cinematic landscape", "starry night sky"])
 
+        return terms
+
+    def _search_and_download(self, keyword: str, target_w: int, target_h: int) -> Optional[Image.Image]:
+        encoded = urllib.parse.quote(keyword)
+        ov_url = f"https://api.openverse.org/v1/images/?q={encoded}&page_size=4"
+        req = urllib.request.Request(
+            ov_url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AIStoryHarness/2.0"}
+        )
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(submit_url, json=payload, headers=headers)
-                if resp.status_code != 202:
-                    return False, self.backend_name, f"HTTP {resp.status_code}"
-                
-                job_id = resp.json().get("id")
-                if not job_id:
-                    return False, self.backend_name, "No job ID returned"
-
-                check_url = f"https://aihorde.net/api/v2/generate/check/{job_id}"
-                status_url = f"https://aihorde.net/api/v2/generate/status/{job_id}"
-
-                for _ in range(8):
-                    await asyncio.sleep(2.0)
-                    c_resp = await client.get(check_url, headers=headers)
-                    if c_resp.status_code != 200:
+            with urllib.request.urlopen(req, timeout=9.0) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                results = data.get("results", [])
+                for r in results:
+                    img_url = r.get("url")
+                    if not img_url:
                         continue
-                    c_data = c_resp.json()
-                    if c_data.get("done", False):
-                        s_resp = await client.get(status_url, headers=headers)
-                        if s_resp.status_code == 200:
-                            gens = s_resp.json().get("generations", [])
-                            if gens and gens[0].get("img"):
-                                img_url = gens[0]["img"]
-                                img_resp = await client.get(img_url)
-                                if img_resp.status_code == 200:
-                                    img = Image.open(io.BytesIO(img_resp.content)).convert("RGB")
-                                    img = img.resize((width, height), Image.Resampling.LANCZOS)
-                                    img.save(output_path, "JPEG", quality=94)
-                                    return True, self.backend_name, "AI Horde diffusion image rendered"
-                        break
+                    try:
+                        dl_req = urllib.request.Request(
+                            img_url,
+                            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                        )
+                        with urllib.request.urlopen(dl_req, timeout=7.0) as dl_resp:
+                            raw = dl_resp.read()
+                            if len(raw) > 8000:
+                                img = Image.open(io.BytesIO(raw)).convert("RGB")
+                                return self._crop_to_vertical(img, target_w, target_h)
+                    except Exception:
+                        continue
         except Exception:
             pass
+        return None
 
-        return False, self.backend_name, "AI Horde unavailable"
+    def _crop_to_vertical(self, img: Image.Image, target_w: int, target_h: int) -> Image.Image:
+        orig_w, orig_h = img.size
+        target_ratio = target_w / target_h
+        orig_ratio = orig_w / orig_h
 
-class ProceduralCinematicProvider(VisualProviderBase):
+        if orig_ratio > target_ratio:
+            # Wider than target ratio: crop left and right
+            new_w = int(orig_h * target_ratio)
+            left = (orig_w - new_w) // 2
+            img = img.crop((left, 0, left + new_w, orig_h))
+        else:
+            # Taller than target ratio: crop top and bottom
+            new_h = int(orig_w / target_ratio)
+            top = (orig_h - new_h) // 2
+            img = img.crop((0, top, orig_w, top + new_h))
+
+        img = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        # Subtle contrast and saturation polish for mobile OLED screens
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.12)
+        return img
+
+class ThematicProceduralCanvasProvider(VisualProviderBase):
     """
-    High-grade procedural cinematic visuals for emergency fallback if network is offline.
+    Tier 3: Rich Thematic Environment Canvas (Never fails, zero offline dependencies).
+    Generates dynamic atmospheric environments tailored directly to scene sentiment:
+    celestial bodies, layered mountain silhouettes, glowing particles, cosmic nebulas,
+    and distinct color palettes for every single scene.
     """
     def __init__(self):
         self.backend_name = "procedural_cinematic"
@@ -237,7 +278,7 @@ class ProceduralCinematicProvider(VisualProviderBase):
 
         try:
             await asyncio.to_thread(
-                self._render_cinematic_visual,
+                self._render_scene_environment,
                 prompt,
                 output_path,
                 style,
@@ -245,12 +286,12 @@ class ProceduralCinematicProvider(VisualProviderBase):
                 height,
                 scene_index
             )
-            return True, self.backend_name, f"Rendered unique cinematic visual for scene {scene_index}"
+            return True, self.backend_name, f"Rendered thematic environment for scene {scene_index}"
         except Exception as e:
-            logger.error(f"Procedural visual render error: {e}")
+            logger.error(f"Procedural environment render error: {e}")
             return False, self.backend_name, str(e)
 
-    def _render_cinematic_visual(
+    def _render_scene_environment(
         self,
         prompt: str,
         output_path: Path,
@@ -259,76 +300,113 @@ class ProceduralCinematicProvider(VisualProviderBase):
         height: int,
         scene_index: int
     ):
-        seed = int(time.time() * 1000) % 100000 + (scene_index * 37) + hash(prompt) % 10000
+        seed = scene_index * 2026 + (hash(prompt) % 100000)
         rng = random.Random(seed)
+        p_lower = prompt.lower()
 
-        img = Image.new("RGB", (width, height), color=(10, 12, 18))
+        is_dragon_fantasy = any(w in p_lower for w in ["dragon", "lumi", "kai", "magic", "fantasy", "anime", "forest", "bridge"])
+        is_space = any(w in p_lower for w in ["star", "galaxy", "space", "nebula", "cosmos", "dyson", "alien"])
+        is_shadow = any(w in p_lower for w in ["shadow", "dark", "mountain", "creature", "monster", "danger", "evil"])
+        is_light = any(w in p_lower for w in ["light", "defeat", "celebrat", "sun", "gold", "dawn", "morning", "triumph"])
+        is_tech = any(w in p_lower for w in ["ai", "robot", "tech", "chip", "cyber", "network"])
+
+        img = Image.new("RGB", (width, height))
         draw = ImageDraw.Draw(img)
 
-        themes = {
-            "business_strategy": [
-                ((8, 14, 28), (20, 45, 80), (0, 180, 216)),
-                ((18, 12, 28), (55, 30, 85), (255, 180, 50)),
-                ((12, 22, 18), (25, 65, 45), (75, 230, 160)),
-            ],
-            "ai_news": [
-                ((5, 10, 25), (15, 35, 75), (0, 240, 255)),
-                ((15, 5, 25), (60, 20, 90), (255, 60, 180)),
-                ((8, 18, 22), (20, 70, 85), (100, 255, 210)),
-            ],
-            "sci_fi_concept": [
-                ((2, 4, 12), (18, 12, 45), (180, 80, 255)),
-                ((8, 4, 16), (40, 15, 35), (255, 90, 40)),
-                ((2, 12, 20), (10, 40, 65), (70, 200, 255)),
-            ],
-            "emerging_tech": [
-                ((12, 16, 24), (30, 50, 75), (80, 220, 255)),
-                ((15, 20, 10), (45, 70, 25), (170, 255, 80)),
-                ((20, 15, 10), (75, 45, 20), (255, 160, 60)),
-            ],
-            "future_predictions": [
-                ((10, 15, 30), (35, 55, 95), (255, 210, 90)),
-                ((6, 20, 25), (25, 80, 95), (140, 255, 230)),
-                ((18, 8, 25), (70, 25, 80), (255, 120, 160)),
-            ]
-        }
-
-        theme_list = themes.get(style.lower(), themes["business_strategy"])
-        top_c, mid_c, accent_c = theme_list[(scene_index - 1) % len(theme_list)]
+        # 1. Background Gradient Palette
+        if is_light:
+            sky_top = (15, 20, 55)
+            sky_mid = (70, 40, 95)
+            sky_bot = (255, 175, 75)
+        elif is_shadow:
+            sky_top = (8, 5, 16)
+            sky_mid = (26, 12, 36)
+            sky_bot = (70, 18, 35)
+        elif is_tech:
+            sky_top = (4, 10, 24)
+            sky_mid = (12, 35, 75)
+            sky_bot = (0, 210, 240)
+        elif is_dragon_fantasy or is_space:
+            sky_top = (6, 9, 24)
+            sky_mid = (18, 28, 60)
+            sky_bot = (40, 70, 105) if scene_index % 2 == 0 else (65, 30, 80)
+        else:
+            sky_top = (10, 16, 32)
+            sky_mid = (22, 45, 75)
+            sky_bot = (15, 85, 125)
 
         for y in range(height):
-            ratio = y / float(height)
-            if ratio < 0.6:
-                sub_r = ratio / 0.6
-                r = int(top_c[0] + (mid_c[0] - top_c[0]) * sub_r)
-                g = int(top_c[1] + (mid_c[1] - top_c[1]) * sub_r)
-                b = int(top_c[2] + (mid_c[2] - top_c[2]) * sub_r)
+            t = y / float(height)
+            if t < 0.65:
+                st = t / 0.65
+                r = int(sky_top[0] + (sky_mid[0] - sky_top[0]) * st)
+                g = int(sky_top[1] + (sky_mid[1] - sky_top[1]) * st)
+                b = int(sky_top[2] + (sky_mid[2] - sky_top[2]) * st)
             else:
-                sub_r = (ratio - 0.6) / 0.4
-                r = int(mid_c[0] + (top_c[0] - mid_c[0]) * sub_r * 0.5)
-                g = int(mid_c[1] + (top_c[1] - mid_c[1]) * sub_r * 0.5)
-                b = int(mid_c[2] + (top_c[2] - mid_c[2]) * sub_r * 0.5)
+                st = (t - 0.65) / 0.35
+                r = int(sky_mid[0] + (sky_bot[0] - sky_mid[0]) * st)
+                g = int(sky_mid[1] + (sky_bot[1] - sky_mid[1]) * st)
+                b = int(sky_mid[2] + (sky_bot[2] - sky_mid[2]) * st)
             draw.line([(0, y), (width, y)], fill=(r, g, b))
 
-        # Dynamic visual elements
-        center_x = width // 2
-        center_y = int(height * 0.52)
-        for ring_r in range(70, 240, 45):
-            draw.arc(
-                [center_x - ring_r, center_y - ring_r // 2, center_x + ring_r, center_y + ring_r // 2],
-                start=0,
-                end=360,
-                fill=(accent_c[0] // 2, accent_c[1] // 2, accent_c[2] // 2),
-                width=2
+        # 2. Celestial Body (Luminous Moon, Golden Sun, or Pulsar)
+        orb_x = rng.randint(int(width * 0.25), int(width * 0.75))
+        orb_y = rng.randint(int(height * 0.16), int(height * 0.36))
+        orb_r = rng.randint(48, 88)
+
+        glow_col = (255, 220, 130) if is_light else ((100, 225, 255) if is_dragon_fantasy or is_space else (255, 110, 130))
+        for halo in range(orb_r + 55, orb_r, -5):
+            draw.ellipse(
+                [orb_x - halo, orb_y - halo, orb_x + halo, orb_y + halo],
+                outline=(glow_col[0] // 3, glow_col[1] // 3, glow_col[2] // 3)
             )
 
-        img.save(output_path, "JPEG", quality=90)
+        draw.ellipse([orb_x - orb_r, orb_y - orb_r, orb_x + orb_r, orb_y + orb_r], fill=(248, 250, 255), outline=glow_col)
+
+        # 3. Twinkling Stars
+        num_stars = rng.randint(140, 240)
+        for _ in range(num_stars):
+            sx = rng.randint(0, width)
+            sy = rng.randint(0, int(height * 0.75))
+            sr = rng.choice([1, 1, 1, 2, 2, 3])
+            brightness = rng.randint(180, 255)
+            color = (brightness, brightness, int(brightness * 0.9)) if rng.random() > 0.35 else (140, 220, 255)
+            draw.ellipse([sx - sr, sy - sr, sx + sr, sy + sr], fill=color)
+
+        # 4. Multi-Layer Mountain Ranges / Horizon Silhouettes
+        for layer in range(3):
+            factor = 0.35 + layer * 0.28
+            layer_col = (
+                int(sky_top[0] * factor),
+                int(sky_top[1] * factor),
+                int(sky_top[2] * factor)
+            )
+            base_y = int(height * (0.60 + layer * 0.12))
+            points = [(0, height), (0, base_y)]
+            x = 0
+            while x < width:
+                x += rng.randint(45, 95)
+                peak_y = base_y + rng.randint(-65, 45)
+                points.append((min(width, x), peak_y))
+            points.append((width, height))
+            draw.polygon(points, fill=layer_col)
+
+        # 5. Magical Floating Particles (Lumi's magic / Starlight)
+        if is_dragon_fantasy or is_light or is_space:
+            for _ in range(35):
+                px = rng.randint(30, width - 30)
+                py = rng.randint(int(height * 0.38), height - 80)
+                pr = rng.randint(3, 6)
+                p_col = (0, 235, 255) if (is_dragon_fantasy or is_space) else (255, 225, 90)
+                draw.ellipse([px - pr, py - pr, px + pr, py + pr], fill=p_col)
+
+        img.save(output_path, "JPEG", quality=92)
 
 class ImageGeneratorService:
     def __init__(self):
         self.pollinations_provider = PollinationsDiffusionProvider()
-        self.ai_horde_provider = AIHordeDiffusionProvider()
-        self.procedural_provider = ProceduralCinematicProvider()
+        self.openverse_provider = OpenverseSemanticProvider()
+        self.thematic_canvas_provider = ThematicProceduralCanvasProvider()
 
     async def generate_scene_image(
         self,
@@ -346,7 +424,7 @@ class ImageGeneratorService:
         valid_styles = ["business_strategy", "ai_news", "sci_fi_concept", "emerging_tech", "future_predictions"]
         style_key = style.lower() if style.lower() in valid_styles else "business_strategy"
 
-        # 1. Primary: Genuine AI Diffusion via Pollinations Flux (Real images matching scene prompt)
+        # Tier 1: Pollinations Flux Diffusion (Free 512x896 endpoint, auto-upscaled)
         try:
             success, backend, msg = await self.pollinations_provider.generate_image(
                 prompt=prompt,
@@ -360,11 +438,11 @@ class ImageGeneratorService:
             if success:
                 return True, backend, msg
         except Exception as e:
-            logger.warning(f"Pollinations primary attempt failed for scene {scene_index}: {e}")
+            logger.warning(f"Tier 1 Pollinations skipped for scene {scene_index}: {e}")
 
-        # 2. Secondary: AI Horde cluster
+        # Tier 2: Openverse Semantic Image Archive (700M+ real art & photo library)
         try:
-            success, backend, msg = await self.ai_horde_provider.generate_image(
+            success, backend, msg = await self.openverse_provider.generate_image(
                 prompt=prompt,
                 output_path=output_path,
                 style=style_key,
@@ -375,11 +453,11 @@ class ImageGeneratorService:
             )
             if success:
                 return True, backend, msg
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Tier 2 Openverse skipped for scene {scene_index}: {e}")
 
-        # 3. Tertiary: High-performance procedural fallback
-        return await self.procedural_provider.generate_image(
+        # Tier 3: Rich Thematic Procedural Environment (Zero dependencies, guaranteed unique)
+        return await self.thematic_canvas_provider.generate_image(
             prompt=prompt,
             output_path=output_path,
             style=style_key,
