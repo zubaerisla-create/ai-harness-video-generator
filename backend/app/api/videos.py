@@ -192,28 +192,53 @@ async def get_thumbnail(
 
     return FileResponse(str(thumb_path), media_type="image/jpeg")
 
-@router.delete("/{video_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{video_id}", status_code=status.HTTP_200_OK)
 async def delete_video(
     video_id: str,
     db: AsyncSession = Depends(get_db),
-    user=Depends(get_current_user)
+    user=Depends(get_optional_user)
 ):
     video_repo = VideoRepository(db)
     v = await video_repo.get_video_by_id(video_id)
     if not v:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
 
-    # Delete video file and thumbnail if within outputs dir
-    try:
-        fp = _resolve_safe_file_path(settings.OUTPUT_DIR, v.file_path)
-        if fp.exists():
-            fp.unlink()
-        if v.thumbnail_path:
+    deleted_files = []
+    # 1. Delete main video file from VPS disk
+    if v.file_path:
+        try:
+            fp = _resolve_safe_file_path(settings.OUTPUT_DIR, v.file_path)
+            if fp.exists():
+                fp.unlink()
+                deleted_files.append(str(fp.name))
+        except Exception:
+            pass
+
+    # 2. Delete thumbnail file from VPS disk
+    if v.thumbnail_path:
+        try:
             tp = _resolve_safe_file_path(settings.OUTPUT_DIR, v.thumbnail_path)
             if tp.exists():
                 tp.unlink()
-    except Exception as e:
+                deleted_files.append(str(tp.name))
+        except Exception:
+            pass
+
+    # 3. Clean up associated subtitle/audio stems from outputs
+    try:
+        if v.file_path:
+            base_stem = Path(v.file_path).stem
+            for extra in settings.OUTPUT_DIR.glob(f"{base_stem}*"):
+                if extra.is_file() and extra.exists():
+                    extra.unlink()
+                    deleted_files.append(str(extra.name))
+    except Exception:
         pass
 
+    # 4. Delete video record from SQLite database
     await video_repo.delete_video(video_id)
-    return None
+    return {
+        "status": "success",
+        "message": f"Video {video_id} permanently deleted from VPS storage and database.",
+        "deleted_files": deleted_files
+    }

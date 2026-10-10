@@ -8,7 +8,10 @@ import {
   Download,
   Plus,
   RefreshCw,
-  FolderOpen
+  Trash2,
+  AlertTriangle,
+  CheckCircle2,
+  X
 } from "lucide-react";
 import VideoModal from "../../components/VideoModal";
 
@@ -30,6 +33,9 @@ export default function VaultPage() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeVideo, setActiveVideo] = useState<{ id: string; title: string; url?: string } | null>(null);
+  const [confirmDeleteVideo, setConfirmDeleteVideo] = useState<VideoItem | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const fetchVideos = async () => {
     try {
@@ -48,9 +54,36 @@ export default function VaultPage() {
 
   useEffect(() => {
     fetchVideos();
-    const interval = setInterval(fetchVideos, 6000);
+    const interval = setInterval(fetchVideos, 8000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleDelete = async (videoId: string) => {
+    try {
+      setDeletingId(videoId);
+      const res = await fetch(`/api/videos/${videoId}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        setVideos((prev) => prev.filter((v) => v.id !== videoId));
+        if (confirmDeleteVideo?.id === videoId) {
+          setConfirmDeleteVideo(null);
+        }
+        if (activeVideo?.id === videoId) {
+          setActiveVideo(null);
+        }
+        setToastMessage("Video file permanently deleted from VPS storage and database.");
+        setTimeout(() => setToastMessage(null), 4000);
+      } else {
+        alert("Failed to delete video from server.");
+      }
+    } catch {
+      alert("Error occurred while communicating with VPS to delete video.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <section className="py-12 sm:py-16 px-4 sm:px-6 lg:px-12 xl:px-20 max-w-7xl mx-auto w-full">
@@ -64,7 +97,7 @@ export default function VaultPage() {
             VIDEO <span className="text-lms-primary">VAULT</span>
           </h1>
           <p className="text-gray-700 font-bold uppercase tracking-wider text-sm mt-2">
-            Fully synthesized, render-complete 720p 9:16 vertical short stories ready for Facebook Reels & YouTube Shorts.
+            Fully synthesized, render-complete 720p 9:16 vertical short stories. Preview, download, or permanently delete assets from VPS.
           </p>
         </div>
 
@@ -85,6 +118,22 @@ export default function VaultPage() {
           </Link>
         </div>
       </div>
+
+      {/* Success Notification Toast */}
+      {toastMessage && (
+        <div className="mb-6 p-4 bg-[#E8FFE0] border-4 border-black font-display font-black uppercase text-sm flex items-center justify-between shadow-brutalist animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="text-black hover:text-rose-600"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      )}
 
       {/* Videos Grid */}
       {videos.length === 0 ? (
@@ -108,7 +157,7 @@ export default function VaultPage() {
           {videos.map((vid) => (
             <div
               key={vid.id}
-              className="card-brutalist overflow-hidden flex flex-col justify-between bg-white"
+              className="card-brutalist overflow-hidden flex flex-col justify-between bg-white relative"
             >
               <div className="aspect-[9/16] bg-black relative flex items-center justify-center overflow-hidden border-b-4 border-black group">
                 {vid.thumbnail_url ? (
@@ -158,7 +207,8 @@ export default function VaultPage() {
                   </p>
                 </div>
 
-                <div className="flex gap-2 pt-2 border-t-2 border-black">
+                {/* Action Buttons Row */}
+                <div className="flex items-center gap-1.5 pt-2 border-t-2 border-black">
                   <button
                     onClick={() =>
                       setActiveVideo({
@@ -167,19 +217,36 @@ export default function VaultPage() {
                         url: vid.download_url,
                       })
                     }
-                    className="btn-outline flex-1 py-1.5 text-xs text-center flex items-center justify-center gap-1.5"
+                    className="btn-outline flex-1 py-1.5 text-[11px] text-center flex items-center justify-center gap-1 px-1"
+                    title="Watch preview"
                   >
-                    <Play className="w-3.5 h-3.5 fill-black" />
-                    PREVIEW
+                    <Play className="w-3 h-3 fill-black" />
+                    WATCH
                   </button>
+
                   <a
                     href={vid.download_url}
                     download
-                    className="btn-black flex-1 py-1.5 text-xs text-center flex items-center justify-center gap-1.5"
+                    className="btn-black flex-1 py-1.5 text-[11px] text-center flex items-center justify-center gap-1 px-1"
+                    title="Download MP4"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    DOWNLOAD
+                    <Download className="w-3 h-3" />
+                    SAVE
                   </a>
+
+                  <button
+                    onClick={() => setConfirmDeleteVideo(vid)}
+                    disabled={deletingId === vid.id}
+                    className="p-2 border-2 border-black bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white transition-colors shadow-brutalist-sm disabled:opacity-50 shrink-0"
+                    title="Delete permanently from VPS"
+                    aria-label="Delete video"
+                  >
+                    {deletingId === vid.id ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
@@ -187,8 +254,65 @@ export default function VaultPage() {
         </div>
       )}
 
+      {/* Dedicated Brutalist Delete Confirmation Modal */}
+      {confirmDeleteVideo && (
+        <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
+          <div className="bg-white border-8 border-black shadow-[16px_16px_0px_0px_rgba(0,0,0,1)] max-w-lg w-full p-6 relative animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 pb-4 mb-4 border-b-4 border-black text-rose-600">
+              <AlertTriangle className="w-8 h-8 shrink-0 text-lms-primary" />
+              <h3 className="font-display font-black text-xl uppercase text-black">
+                CONFIRM VIDEO DELETION
+              </h3>
+            </div>
+
+            <p className="text-sm font-bold text-gray-800 leading-relaxed mb-4">
+              Are you sure you want to permanently delete:
+            </p>
+
+            <div className="p-3 bg-[#FFF4E0] border-2 border-black font-display font-black text-sm uppercase text-black mb-4 truncate">
+              "{confirmDeleteVideo.title}"
+            </div>
+
+            <p className="text-xs text-rose-600 font-bold mb-6">
+              ⚠️ This will permanently erase the 720p MP4 file from the VPS server disk and remove the record from the database. This action cannot be undone.
+            </p>
+
+            <div className="flex justify-end gap-3 border-t-4 border-black pt-4">
+              <button
+                onClick={() => setConfirmDeleteVideo(null)}
+                disabled={deletingId !== null}
+                className="btn-outline px-5 py-2.5 text-xs"
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={() => handleDelete(confirmDeleteVideo.id)}
+                disabled={deletingId !== null}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-display font-black text-xs uppercase border-4 border-black shadow-brutalist flex items-center gap-2 transition-all disabled:opacity-50"
+              >
+                {deletingId === confirmDeleteVideo.id ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    DELETING FROM VPS...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    YES, DELETE FROM VPS
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Video Preview Modal */}
-      <VideoModal video={activeVideo} onClose={() => setActiveVideo(null)} />
+      <VideoModal
+        video={activeVideo}
+        onClose={() => setActiveVideo(null)}
+        onDelete={handleDelete}
+      />
     </section>
   );
 }
