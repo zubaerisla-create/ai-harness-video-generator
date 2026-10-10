@@ -98,10 +98,10 @@ class PollinationsDiffusionProvider(VisualProviderBase):
         parts.append(enhancer)
         parts.append("9:16 vertical composition, clean image, no text watermark")
 
-        full_prompt = ", ".join(parts)[:380]
+        full_prompt = ", ".join(parts)[:240]
         encoded_prompt = urllib.parse.quote(full_prompt)
 
-        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&nologo=true&seed={seed}&model=flux"
+        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={width}&height={height}&nologo=true&seed={seed}"
 
         data = await asyncio.to_thread(self._fetch_image_sync, url)
         if data:
