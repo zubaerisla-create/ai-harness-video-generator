@@ -153,7 +153,7 @@ def _format_job_response(job) -> JobResponse:
             ))
 
     video_dict = None
-    v = getattr(job, "video", None) or job.__dict__.get("video")
+    v = job.__dict__.get("video")
     if v:
         video_dict = {
             "id": v.id,
