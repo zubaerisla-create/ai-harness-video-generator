@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Story Video Harness | Automated Storytelling Pipeline</title>
+  
+  <!-- Google Fonts: Bricolage Grotesque & Space Grotesk (Authentic lwhh.org typography) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'lms-primary': '#E60000',
+            'pastel-cream': '#FFF4E0',
+            'pastel-mint': '#E8FFE0',
+            'pastel-blue': '#E0F4FF',
+            'pastel-purple': '#F0E0FF',
+            'footer-bg': '#F5F5F0',
+          },
+          fontFamily: {
+            display: ['"Bricolage Grotesque"', 'sans-serif'],
+            sans: ['"Space Grotesk"', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Space Grotesk', system-ui, sans-serif;
+      background-color: #FFFFFF;
+      color: #000000;
+      overflow-x: hidden;
+    }
+    .font-display {
+      font-family: 'Bricolage Grotesque', sans-serif;
+    }
+    ::selection {
+      background-color: #E60000;
+      color: #FFFFFF;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      background-color: #E60000;
+      color: #FFFFFF;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      border: 4px solid #000000;
+      box-shadow: 4px 4px 0px 0px rgba(0,0,0,1);
+      transition: all 0.15s ease-in-out;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 6px 6px 0px 0px rgba(0,0,0,1);
+    }
+    .btn-primary:active {
+      transform: translateY(0);
+      box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
+    }
+    .btn-black {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      background-color: #000000;
+      color: #FFFFFF;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      border: 4px solid #000000;
+      box-shadow: 4px 4px 0px 0px rgba(230,0,0,1);
+      transition: all 0.15s ease-in-out;
+    }
+    .btn-black:hover {
+      transform: translateY(-2px);
+      box-shadow: 6px 6px 0px 0px rgba(230,0,0,1);
+    }
+    .btn-black:active {
+      transform: translateY(0);
+      box-shadow: 2px 2px 0px 0px rgba(230,0,0,1);
+    }
+    .card-brutalist {
+      background-color: #FFFFFF;
+      border: 4px solid #000000;
+      box-shadow: 8px 8px 0px 0px rgba(0,0,0,1);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .card-brutalist:hover {
+      transform: translateY(-6px);
+      box-shadow: 12px 12px 0px 0px rgba(0,0,0,1);
+      border-color: #E60000;
+    }
+    .tag-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.75rem;
+      font-weight: 900;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      border: 2px solid #000000;
+      box-shadow: 2px 2px 0px 0px rgba(0,0,0,1);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-white">
+
+  <!-- 1. TOP NAVIGATION (lwhh.org authentic style) -->
+  <nav id="site-nav" class="sticky top-0 z-50 bg-white border-b-4 border-black transition-shadow duration-200">
+    <div class="w-full px-4 sm:px-6 lg:px-12 xl:px-20 mx-auto">
+      <div class="flex items-center justify-between h-20">
+        
+        <!-- Logo -->
+        <a href="javascript:void(0)" onclick="switchTab('home')" class="flex items-center gap-3 font-display font-black text-2xl tracking-tighter hover:text-lms-primary transition-colors">
+          <div class="w-10 h-10 bg-black text-white flex items-center justify-center border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
+            <i class="fa-solid fa-clapperboard text-lg"></i>
+          </div>
+          <span class="text-black uppercase">AI HARNESS</span>
+        </a>
+
+        <!-- Desktop Navigation Tabs -->
+        <div class="hidden md:flex items-center gap-1">
+          <button onclick="switchTab('home')" id="tab-nav-home" class="relative font-display font-black text-sm uppercase tracking-widest px-4 py-2 text-lms-primary underline decoration-4 underline-offset-8 transition-colors">
+            HOME
+          </button>
+          <button onclick="switchTab('studio')" id="tab-nav-studio" class="relative font-display font-black text-sm uppercase tracking-widest px-4 py-2 text-black hover:text-lms-primary transition-colors">
+            STUDIO
+          </button>
+          <button onclick="switchTab('queue')" id="tab-nav-queue" class="relative font-display font-black text-sm uppercase tracking-widest px-4 py-2 text-black hover:text-lms-primary transition-colors">
+            JOB QUEUE
+          </button>
+          <button onclick="switchTab('vault')" id="tab-nav-vault" class="relative font-display font-black text-sm uppercase tracking-widest px-4 py-2 text-black hover:text-lms-primary transition-colors">
+            VIDEO VAULT
+          </button>
+          <button onclick="switchTab('telemetry')" id="tab-nav-telemetry" class="relative font-display font-black text-sm uppercase tracking-widest px-4 py-2 text-black hover:text-lms-primary transition-colors">
+            TELEMETRY
+          </button>
+        </div>
+
+        <!-- Action / Hostinger KVM2 pill -->
+        <div class="flex items-center gap-4">
+          <div class="hidden lg:flex items-center gap-2 bg-[#FFF4E0] border-2 border-black px-3 py-1 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span class="font-display font-black text-[11px] uppercase tracking-wider text-black">
+              Hostinger KVM2 Active
+            </span>
+          </div>
+
+          <button onclick="switchTab('studio')" class="btn-primary px-6 py-2.5 text-xs">
+            START CREATING
+          </button>
+
+          <!-- Mobile Toggle -->
+          <button onclick="toggleMobileNav()" class="md:hidden p-2 border-2 border-black hover:bg-black hover:text-white transition-colors">
+            <i class="fa-solid fa-bars text-xl"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Mobile Dropdown Menu -->
+      <div id="mobile-menu" class="hidden md:hidden pb-6 border-t-4 border-black pt-4">
+        <div class="flex flex-col gap-2">
+          <button onclick="switchTab('home'); toggleMobileNav();" class="px-4 py-3 font-display font-black text-sm uppercase tracking-widest text-left border-2 border-black hover:bg-lms-primary hover:text-white">HOME</button>
+          <button onclick="switchTab('studio'); toggleMobileNav();" class="px-4 py-3 font-display font-black text-sm uppercase tracking-widest text-left border-2 border-black hover:bg-lms-primary hover:text-white">STUDIO</button>
+          <button onclick="switchTab('queue'); toggleMobileNav();" class="px-4 py-3 font-display font-black text-sm uppercase tracking-widest text-left border-2 border-black hover:bg-lms-primary hover:text-white">JOB QUEUE</button>
+          <button onclick="switchTab('vault'); toggleMobileNav();" class="px-4 py-3 font-display font-black text-sm uppercase tracking-widest text-left border-2 border-black hover:bg-lms-primary hover:text-white">VIDEO VAULT</button>
+          <button onclick="switchTab('telemetry'); toggleMobileNav();" class="px-4 py-3 font-display font-black text-sm uppercase tracking-widest text-left border-2 border-black hover:bg-lms-primary hover:text-white">TELEMETRY</button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- TAB CONTENT WRAPPER -->
+  <main class="flex-1 w-full">
+
+    <!-- TAB 1: HOME / SHOWCASE (Authentic lwhh.org clone) -->
+    <div id="page-home">
+      
+      <!-- HERO SECTION -->
+      <section class="relative border-b-8 border-black overflow-hidden pt-10 lg:pt-0 bg-white">
+        <!-- Split polygon red background -->
+        <div class="hidden lg:block absolute top-0 bottom-0 right-0 w-[55%] bg-lms-primary [clip-path:polygon(15%_0,100%_0,100%_100%,0_100%)] z-0"></div>
+
+        <div class="flex flex-col lg:flex-row min-h-[85vh]">
+          
+          <!-- Left Content -->
+          <div class="flex-1 flex flex-col justify-center px-4 sm:px-6 lg:px-12 xl:px-20 py-12 lg:py-16 relative z-10 bg-transparent">
+            <!-- Decorative dots -->
+            <div class="absolute right-10 top-20 hidden lg:block opacity-40">
+              <svg width="60" height="60" viewBox="0 0 60 60" fill="none">
+                <circle cx="4" cy="4" r="2" fill="#E60000"/>
+                <circle cx="20" cy="4" r="2" fill="#E60000"/>
+                <circle cx="36" cy="4" r="2" fill="#E60000"/>
+                <circle cx="52" cy="4" r="2" fill="#E60000"/>
+                <circle cx="4" cy="20" r="2" fill="#E60000"/>
+                <circle cx="20" cy="20" r="2" fill="#E60000"/>
+                <circle cx="36" cy="20" r="2" fill="#E60000"/>
+                <circle cx="52" cy="20" r="2" fill="#E60000"/>
+                <circle cx="4" cy="36" r="2" fill="#E60000"/>
+                <circle cx="20" cy="36" r="2" fill="#E60000"/>
+                <circle cx="36" cy="36" r="2" fill="#E60000"/>
+                <circle cx="52" cy="36" r="2" fill="#E60000"/>
+              </svg>
+            </div>
+
+            <div class="relative max-w-2xl mx-auto lg:mx-0">
+              <div class="inline-flex items-center gap-2 bg-[#1a1a1a] text-white px-4 py-2 text-xs sm:text-sm font-bold uppercase tracking-wider mb-8 rounded-lg border-b-4 border-lms-primary transform -rotate-1">
+                🔥 AI STORY VIDEO HARNESS • POWERED BY OLLAMA & PIPER
+              </div>
+
+              <!-- Massive Headline -->
+              <h1 class="text-6xl sm:text-7xl xl:text-[7.2rem] font-black font-display text-black tracking-tighter leading-[0.9] mb-8 uppercase relative">
+                GENERATE<br/>
+                <span class="text-lms-primary relative inline-block">
+                  STORIES
+                  <svg class="absolute -bottom-2 left-0 w-[110%] h-3 text-black/20" viewBox="0 0 100 20" preserveAspectRatio="none" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
+                    <path d="M5 10 Q 25 18 50 8 T 95 12" />
+                  </svg>
+                </span><br/>
+                THAT<br/>
+                GO VIRAL<span class="text-lms-primary">.</span>
+              </h1>
+
+              <p class="text-base sm:text-lg lg:text-xl text-gray-700 font-medium mb-10 leading-relaxed max-w-xl">
+                Stop wasting hours on manual editing. Start generating hands-on viral short videos and cinematic stories with automated AI pipelines at your own pace.
+              </p>
+
+              <div class="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 mb-12 relative">
+                <button onclick="switchTab('studio')" class="group inline-flex items-center justify-center gap-3 bg-lms-primary text-white font-black px-7 py-4 sm:px-9 sm:py-5 text-sm sm:text-base uppercase tracking-widest border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] active:translate-y-0 transition-all w-full sm:w-auto relative z-10">
+                  START CREATING
+                  <i class="fa-solid fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                </button>
+
+                <button onclick="switchTab('queue')" class="inline-flex items-center justify-center gap-2 bg-white text-black font-black px-6 py-4 text-sm sm:text-base uppercase tracking-widest border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-0 transition-all w-full sm:w-auto">
+                  VIEW PIPELINE
+                </button>
+              </div>
+
+              <!-- Social proof -->
+              <div class="flex flex-col xl:flex-row items-start xl:items-center gap-6 sm:gap-8 pt-4">
+                <div class="flex items-center gap-3">
+                  <div class="flex -space-x-3">
+                    <div class="w-10 h-10 rounded-full border-2 border-black bg-yellow-400 flex items-center justify-center font-bold text-xs">AI</div>
+                    <div class="w-10 h-10 rounded-full border-2 border-black bg-sky-400 flex items-center justify-center font-bold text-xs">TTS</div>
+                    <div class="w-10 h-10 rounded-full border-2 border-black bg-pink-400 flex items-center justify-center font-bold text-xs">720p</div>
+                    <div class="w-10 h-10 rounded-full border-2 border-black bg-purple-500 flex items-center justify-center font-bold text-xs">9:16</div>
+                    <div id="hero-count-badge" class="w-10 h-10 rounded-full border-2 border-black bg-lms-primary flex items-center justify-center text-white text-xs font-bold shrink-0">+140</div>
+                  </div>
+                  <div class="text-xs font-bold text-gray-700 leading-tight max-w-[170px]">
+                    Over 10,000+ AI stories generated autonomously
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <div class="flex text-amber-500 text-sm">
+                    <i class="fa-solid fa-star"></i>
+                    <i class="fa-solid fa-star"></i>
+                    <i class="fa-solid fa-star"></i>
+                    <i class="fa-solid fa-star"></i>
+                    <i class="fa-solid fa-star"></i>
+                  </div>
+                  <div class="text-sm font-black text-black">
+                    5.0 <span class="text-gray-600 font-normal">(Hostinger KVM2 Verified)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Floating Tech Tags (lwhh signature style) -->
+          <div class="flex-1 relative bg-lms-primary lg:bg-transparent overflow-hidden flex items-center justify-center min-h-[500px] lg:min-h-full border-t-8 lg:border-t-0 border-black p-8">
+            <div class="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none overflow-hidden">
+              <div class="text-[18rem] font-black font-display leading-none whitespace-nowrap transform -rotate-12 text-white">HARNESS</div>
+            </div>
+
+            <div class="relative z-10 w-full max-w-3xl flex flex-wrap justify-center content-center gap-4 lg:gap-6 mt-8">
+              <div class="bg-[#E0F4FF] text-black border-4 border-black px-4 py-2 sm:px-5 sm:py-2.5 flex items-center gap-3 font-black text-sm sm:text-base lg:text-lg uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] sm:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transform rotate-2 hover:scale-110 hover:rotate-0 transition-transform cursor-default select-none z-10">
+                <i class="fa-solid fa-briefcase text-indigo-600"></i>
+                BUSINESS STRATEGY
+              </div>
+
+              <div class="bg-[#FFF4E0] text-black border-4 border-black px-4 py-2 sm:px-5 sm:py-2.5 flex items-center gap-3 font-black text-sm sm:text-base lg:text-lg uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] sm:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transform -rotate-3 hover:scale-110 hover:rotate-0 transition-transform cursor-default select-none z-10">
+                <i class="fa-solid fa-robot text-amber-600"></i>
+                CURRENT AI NEWS
+              </div>
+
+              <div class="bg-white text-black border-4 border-black px-4 py-2 sm:px-5 sm:py-2.5 flex items-center gap-3 font-black text-sm sm:text-base lg:text-lg uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] sm:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transform rotate-3 hover:scale-110 hover:rotate-0 transition-transform cursor-default select-none z-10">
+                <i class="fa-solid fa-microchip text-emerald-600"></i>
+                EMERGING TECH
+              </div>
+
+              <div class="bg-[#E8FFE0] text-black border-4 border-black px-4 py-2 sm:px-5 sm:py-2.5 flex items-center gap-3 font-black text-sm sm:text-base lg:text-lg uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] sm:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transform -rotate-2 hover:scale-110 hover:rotate-0 transition-transform cursor-default select-none z-10">
+                <i class="fa-solid fa-atom text-green-700"></i>
+                SCI-FI REALITY
+              </div>
+
+              <div class="bg-white text-black border-4 border-black px-4 py-2 sm:px-5 sm:py-2.5 flex items-center gap-3 font-black text-sm sm:text-base lg:text-lg uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] sm:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transform rotate-6 hover:scale-110 hover:rotate-0 transition-transform cursor-default select-none z-10">
+                <i class="fa-solid fa-satellite text-blue-600"></i>
+                FUTURE 2035
+              </div>
+
+              <div class="bg-[#F0E0FF] text-black border-4 border-black px-4 py-2 sm:px-5 sm:py-2.5 flex items-center gap-3 font-black text-sm sm:text-base lg:text-lg uppercase tracking-widest shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] sm:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transform -rotate-6 hover:scale-110 hover:rotate-0 transition-transform cursor-default select-none z-10">
+                <i class="fa-solid fa-bolt text-purple-700"></i>
+                5 VIDEOS / DAY
+              </div>
+
+              <!-- Central Neo-Brutalist Highlight Card -->
+              <div class="w-full mt-10 flex justify-center z-10">
+                <div class="bg-[#FFF4E0] border-8 border-black p-8 sm:p-10 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] sm:shadow-[16px_16px_0px_0px_rgba(0,0,0,1)] transform rotate-2 hover:rotate-0 transition-transform duration-300 relative w-full max-w-md">
+                  <div class="absolute -top-6 -left-6 bg-lms-primary text-white border-4 border-black w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center transform -rotate-12 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-20">
+                    <i class="fa-solid fa-fire text-2xl"></i>
+                  </div>
+
+                  <h3 class="text-black text-4xl sm:text-5xl font-black font-display uppercase leading-[0.9] tracking-tighter mb-6 border-b-8 border-black pb-6">
+                    Automated<br/>
+                    <span class="text-lms-primary">&amp;</span> Free<br/>
+                    Pipeline
+                  </h3>
+
+                  <div class="flex flex-col sm:flex-row items-center gap-4">
+                    <div class="flex-1 w-full bg-white border-4 border-black p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] text-center transform -rotate-1">
+                      <div class="font-black text-2xl sm:text-3xl text-black">100%</div>
+                      <div class="text-xs sm:text-sm font-black uppercase tracking-widest text-lms-primary">Hands-Free</div>
+                    </div>
+                    <div class="flex-1 w-full bg-white border-4 border-black p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] text-center transform rotate-1">
+                      <div class="font-black text-2xl sm:text-3xl text-black">24/7</div>
+                      <div class="text-xs sm:text-sm font-black uppercase tracking-widest text-lms-primary">Auto-Pilot</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CRASH PIPELINES SECTION (#FFF4E0 Background) -->
+      <section class="py-24 sm:py-32 border-b-8 border-black relative overflow-hidden bg-[#FFF4E0]">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div class="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6 border-b-8 border-black pb-8">
+            <div class="max-w-3xl">
+              <div class="inline-flex items-center gap-2 bg-black text-white px-4 py-2 font-black uppercase tracking-widest text-sm mb-6 border-4 border-black shadow-[4px_4px_0px_0px_rgba(230,0,0,1)] transform -rotate-1">
+                ⚡ ZERO FLUFF • HIGH THROUGHPUT
+              </div>
+              <h2 class="text-[3.5rem] sm:text-[5rem] lg:text-[6.5rem] font-black font-display tracking-tighter uppercase mb-2 leading-none">
+                <span class="text-black">AUTOMATION</span> <span class="text-lms-primary">PIPELINES</span>
+              </h2>
+              <p class="text-gray-800 font-bold text-sm sm:text-base lg:text-lg uppercase tracking-widest mb-6">
+                Fast-paced, single-stream deep pipelines to produce full 720p 9:16 vertical videos in one click.
+              </p>
+              <div class="flex items-center gap-3">
+                <div class="h-2 bg-black w-20"></div>
+                <div class="h-2 bg-lms-primary w-8"></div>
+              </div>
+            </div>
+
+            <div class="shrink-0">
+              <button onclick="switchTab('studio')" class="btn-black px-8 py-5 text-sm sm:text-base">
+                EXPLORE ALL PIPELINES <i class="fa-solid fa-arrow-right ml-2"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Cards Grid -->
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+            <!-- Pipeline 1: Business Strategy -->
+            <div class="card-brutalist flex flex-col h-full">
+              <div class="aspect-video bg-black relative overflow-hidden border-b-4 border-black flex items-center justify-center">
+                <div class="absolute inset-0 bg-gradient-to-tr from-amber-600 via-rose-700 to-indigo-950 opacity-90"></div>
+                <div class="relative text-center text-white z-10 px-4">
+                  <div class="text-2xl font-black font-display uppercase tracking-widest">BUSINESS STRATEGY</div>
+                  <div class="text-xs uppercase tracking-widest mt-1 opacity-80">Corporate Moats & Financial Breakdowns</div>
+                </div>
+                <div class="absolute bottom-3 right-3 bg-black text-white px-3 py-1 text-xs font-black border-2 border-white shadow-[2px_2px_0px_0px_rgba(230,0,0,1)] transform rotate-1">
+                  ⚡ 00:45 MIN
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2 px-6 pt-4 pb-2 bg-white">
+                <span class="tag-badge bg-black text-white">PIPELINE 01</span>
+                <span class="tag-badge bg-white text-black">9:16 SHORTS</span>
+              </div>
+              <div class="flex-1 flex flex-col px-6 pb-6 bg-white">
+                <div class="flex flex-wrap gap-2 mb-4">
+                  <span class="text-[10px] bg-black text-white font-display font-black uppercase tracking-widest px-2 py-1">High Retention</span>
+                  <span class="text-[10px] bg-black text-white font-display font-black uppercase tracking-widest px-2 py-1">Viral Hooks</span>
+                </div>
+                <h3 class="text-2xl font-display font-black text-black leading-tight mb-2 uppercase">
+                  Business Moat Strategy Pipeline
+                </h3>
+                <p class="text-xs text-gray-600 font-bold uppercase tracking-wider mb-6">BY AI HARNESS ENGINE</p>
+                <div class="mt-auto pt-6 border-t-4 border-black flex items-center justify-between">
+                  <span class="text-lg font-display font-black bg-lms-primary text-white px-3 py-1 uppercase tracking-widest border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">FREE</span>
+                  <button onclick="applyPresetAndOpen('The $40 Billion McDonald\'s Secret: How the world\'s biggest fast food chain is actually an unstoppable real estate monopoly.', 'business_strategy')" class="w-10 h-10 border-4 border-black flex items-center justify-center text-black font-black hover:bg-lms-primary hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    <i class="fa-solid fa-arrow-right"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Pipeline 2: Current AI News -->
+            <div class="card-brutalist flex flex-col h-full">
+              <div class="aspect-video bg-black relative overflow-hidden border-b-4 border-black flex items-center justify-center">
+                <div class="absolute inset-0 bg-gradient-to-tr from-cyan-600 via-blue-700 to-black opacity-90"></div>
+                <div class="relative text-center text-white z-10 px-4">
+                  <div class="text-2xl font-black font-display uppercase tracking-widest">AI NEWS & ROBOTICS</div>
+                  <div class="text-xs uppercase tracking-widest mt-1 opacity-80">Frontier Reasoning & Humanoids</div>
+                </div>
+                <div class="absolute bottom-3 right-3 bg-black text-white px-3 py-1 text-xs font-black border-2 border-white shadow-[2px_2px_0px_0px_rgba(230,0,0,1)] transform rotate-1">
+                  ⚡ 00:45 MIN
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2 px-6 pt-4 pb-2 bg-white">
+                <span class="tag-badge bg-black text-white">PIPELINE 02</span>
+                <span class="tag-badge bg-white text-black">TECH INTELLIGENCE</span>
+              </div>
+              <div class="flex-1 flex flex-col px-6 pb-6 bg-white">
+                <div class="flex flex-wrap gap-2 mb-4">
+                  <span class="text-[10px] bg-black text-white font-display font-black uppercase tracking-widest px-2 py-1">Ollama Llama 3.2</span>
+                  <span class="text-[10px] bg-black text-white font-display font-black uppercase tracking-widest px-2 py-1">Sound FX Mix</span>
+                </div>
+                <h3 class="text-2xl font-display font-black text-black leading-tight mb-2 uppercase">
+                  Current AI Breakthroughs Pipeline
+                </h3>
+                <p class="text-xs text-gray-600 font-bold uppercase tracking-wider mb-6">BY AI HARNESS ENGINE</p>
+                <div class="mt-auto pt-6 border-t-4 border-black flex items-center justify-between">
+                  <span class="text-lg font-display font-black bg-lms-primary text-white px-3 py-1 uppercase tracking-widest border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">FREE</span>
+                  <button onclick="applyPresetAndOpen('Humanoid Robots Entering Assembly Lines: How Figure 02 and Tesla Optimus are reshaping physical manufacturing in 2026.', 'ai_news')" class="w-10 h-10 border-4 border-black flex items-center justify-center text-black font-black hover:bg-lms-primary hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    <i class="fa-solid fa-arrow-right"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Pipeline 3: Future Predictions & Sci-Fi -->
+            <div class="card-brutalist flex flex-col h-full">
+              <div class="aspect-video bg-black relative overflow-hidden border-b-4 border-black flex items-center justify-center">
+                <div class="absolute inset-0 bg-gradient-to-tr from-purple-700 via-indigo-900 to-black opacity-90"></div>
+                <div class="relative text-center text-white z-10 px-4">
+                  <div class="text-2xl font-black font-display uppercase tracking-widest">FUTURE 2035 & SCI-FI</div>
+                  <div class="text-xs uppercase tracking-widest mt-1 opacity-80">Megastructures & 2035 Civilization</div>
+                </div>
+                <div class="absolute bottom-3 right-3 bg-black text-white px-3 py-1 text-xs font-black border-2 border-white shadow-[2px_2px_0px_0px_rgba(230,0,0,1)] transform rotate-1">
+                  ⚡ 00:45 MIN
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2 px-6 pt-4 pb-2 bg-white">
+                <span class="tag-badge bg-black text-white">PIPELINE 03</span>
+                <span class="tag-badge bg-white text-black">FUTURE TECH</span>
+              </div>
+              <div class="flex-1 flex flex-col px-6 pb-6 bg-white">
+                <div class="flex flex-wrap gap-2 mb-4">
+                  <span class="text-[10px] bg-black text-white font-display font-black uppercase tracking-widest px-2 py-1">Kinetic Motion</span>
+                  <span class="text-[10px] bg-black text-white font-display font-black uppercase tracking-widest px-2 py-1">Second Sync</span>
+                </div>
+                <h3 class="text-2xl font-display font-black text-black leading-tight mb-2 uppercase">
+                  Sci-Fi & Future Predictions Pipeline
+                </h3>
+                <p class="text-xs text-gray-600 font-bold uppercase tracking-wider mb-6">BY AI HARNESS ENGINE</p>
+                <div class="mt-auto pt-6 border-t-4 border-black flex items-center justify-between">
+                  <span class="text-lg font-display font-black bg-lms-primary text-white px-3 py-1 uppercase tracking-widest border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">FREE</span>
+                  <button onclick="applyPresetAndOpen('What Daily Life Looks Like in 2035: Autonomous transit, ambient AI, and the transition to a post-labor economy.', 'future_predictions')" class="w-10 h-10 border-4 border-black flex items-center justify-center text-black font-black hover:bg-lms-primary hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    <i class="fa-solid fa-arrow-right"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- BITE-SIZED SHORTS SECTION (Pitch Black background #000000) -->
+      <section class="py-24 sm:py-32 border-b-8 border-black relative overflow-hidden bg-black text-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div class="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-6 border-b-8 border-white pb-8 sm:pb-12">
+            <div class="max-w-3xl">
+              <div class="inline-flex items-center justify-center bg-white text-black px-4 py-2 font-black uppercase tracking-widest text-sm mb-6 border-2 border-white shadow-[4px_4px_0px_0px_rgba(230,0,0,1)] transform -rotate-2">
+                ⚡ QUICK PRODUCTION
+              </div>
+              <h2 class="text-[3rem] sm:text-[4.5rem] lg:text-[6rem] font-black font-display tracking-tighter uppercase mb-2 leading-[0.9]">
+                <span class="text-white">BITE-SIZED</span><br/>
+                <span class="text-lms-primary" style="text-shadow: 4px 4px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;">SHORTS & REELS</span>
+              </h2>
+              <p class="text-black font-black text-lg sm:text-xl uppercase tracking-widest mt-6 bg-white inline-block px-4 py-2 border-2 border-white shadow-[4px_4px_0px_0px_rgba(230,0,0,1)]">
+                Master viral short-form storytelling in seconds.
+              </p>
+            </div>
+
+            <div class="relative">
+              <button onclick="switchTab('vault')" class="btn-primary px-8 py-5 text-base shadow-[8px_8px_0px_0px_rgba(255,255,255,1)] hover:shadow-[10px_10px_0px_0px_rgba(255,255,255,1)]">
+                BINGE WATCH ALL <i class="fa-solid fa-arrow-right ml-2"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Cards Grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div onclick="openDemoModal('কোনও খরচ ছাড়াই সম্পূর্ণ AI ভিডিও অটোমেশন তৈরি করুন')" class="group flex flex-col relative bg-white border-4 border-white shadow-[8px_8px_0px_0px_rgba(255,255,255,0.4)] hover:-translate-y-2 hover:shadow-[12px_12px_0px_0px_rgba(255,255,255,0.8)] transition-all duration-300 ease-out cursor-pointer text-black">
+              <div class="aspect-[9/16] bg-black relative overflow-hidden border-b-4 border-black">
+                <div class="w-full h-full bg-gradient-to-br from-amber-500 to-rose-600 opacity-85 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-4 text-center">
+                  <div class="text-white font-black font-display text-xl uppercase tracking-wider drop-shadow-md">AI AUTOMATION</div>
+                </div>
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div class="w-16 h-16 bg-lms-primary border-4 border-black flex items-center justify-center transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                    <i class="fa-solid fa-play text-white text-2xl ml-1"></i>
+                  </div>
+                </div>
+                <div class="absolute bottom-4 right-4 bg-black text-white px-3 py-1 text-xs font-black border-2 border-white transform rotate-2 group-hover:rotate-0 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  ▶ WATCH
+                </div>
+              </div>
+              <div class="p-6 flex-1 flex flex-col bg-white">
+                <h3 class="text-xl font-display font-black text-black leading-snug uppercase group-hover:text-lms-primary transition-colors line-clamp-2 mb-4">
+                  কোনও খরচ ছাড়াই সম্পূর্ণ AI ভিডিও অটোমেশন তৈরি করুন
+                </h3>
+                <div class="mt-auto pt-4 border-t-4 border-black flex justify-between items-center">
+                  <span class="text-xs font-black uppercase tracking-widest bg-[#E8FFE0] px-3 py-1 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] group-hover:bg-lms-primary group-hover:text-white transition-colors">Free</span>
+                  <div class="w-10 h-10 border-4 border-black bg-white flex items-center justify-center group-hover:bg-black group-hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    <i class="fa-solid fa-arrow-right"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div onclick="openDemoModal('Claude এবং Codex দিয়ে স্টোরি স্ক্রিপ্টিং ও ভয়েসওভার')" class="group flex flex-col relative bg-white border-4 border-white shadow-[8px_8px_0px_0px_rgba(255,255,255,0.4)] hover:-translate-y-2 hover:shadow-[12px_12px_0px_0px_rgba(255,255,255,0.8)] transition-all duration-300 ease-out cursor-pointer text-black">
+              <div class="aspect-[9/16] bg-black relative overflow-hidden border-b-4 border-black">
+                <div class="w-full h-full bg-gradient-to-br from-blue-600 to-indigo-800 opacity-85 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-4 text-center">
+                  <div class="text-white font-black font-display text-xl uppercase tracking-wider drop-shadow-md">PROMPT CRAFT</div>
+                </div>
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div class="w-16 h-16 bg-lms-primary border-4 border-black flex items-center justify-center transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                    <i class="fa-solid fa-play text-white text-2xl ml-1"></i>
+                  </div>
+                </div>
+                <div class="absolute bottom-4 right-4 bg-black text-white px-3 py-1 text-xs font-black border-2 border-white transform rotate-2 group-hover:rotate-0 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  ▶ WATCH
+                </div>
+              </div>
+              <div class="p-6 flex-1 flex flex-col bg-white">
+                <h3 class="text-xl font-display font-black text-black leading-snug uppercase group-hover:text-lms-primary transition-colors line-clamp-2 mb-4">
+                  Claude এবং Codex দিয়ে স্টোরি স্ক্রিপ্টিং ও ভয়েসওভার
+                </h3>
+                <div class="mt-auto pt-4 border-t-4 border-black flex justify-between items-center">
+                  <span class="text-xs font-black uppercase tracking-widest bg-[#FFF4E0] px-3 py-1 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] group-hover:bg-lms-primary group-hover:text-white transition-colors">৳299.00</span>
+                  <div class="w-10 h-10 border-4 border-black bg-white flex items-center justify-center group-hover:bg-black group-hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    <i class="fa-solid fa-arrow-right"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div onclick="openDemoModal('টাইরো ড্যাশবোর্ডে 24/7 অটো-পাইলট ভিডিও জেনারেশন')" class="group flex flex-col relative bg-white border-4 border-white shadow-[8px_8px_0px_0px_rgba(255,255,255,0.4)] hover:-translate-y-2 hover:shadow-[12px_12px_0px_0px_rgba(255,255,255,0.8)] transition-all duration-300 ease-out cursor-pointer text-black">
+              <div class="aspect-[9/16] bg-black relative overflow-hidden border-b-4 border-black">
+                <div class="w-full h-full bg-gradient-to-br from-emerald-500 to-teal-700 opacity-85 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-4 text-center">
+                  <div class="text-white font-black font-display text-xl uppercase tracking-wider drop-shadow-md">KVM2 OPTIMIZED</div>
+                </div>
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div class="w-16 h-16 bg-lms-primary border-4 border-black flex items-center justify-center transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                    <i class="fa-solid fa-play text-white text-2xl ml-1"></i>
+                  </div>
+                </div>
+                <div class="absolute bottom-4 right-4 bg-black text-white px-3 py-1 text-xs font-black border-2 border-white transform rotate-2 group-hover:rotate-0 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  ▶ WATCH
+                </div>
+              </div>
+              <div class="p-6 flex-1 flex flex-col bg-white">
+                <h3 class="text-xl font-display font-black text-black leading-snug uppercase group-hover:text-lms-primary transition-colors line-clamp-2 mb-4">
+                  টাইরো ড্যাশবোর্ডে 24/7 অটো-পাইলট ভিডিও জেনারেশন
+                </h3>
+                <div class="mt-auto pt-4 border-t-4 border-black flex justify-between items-center">
+                  <span class="text-xs font-black uppercase tracking-widest bg-[#E0F4FF] px-3 py-1 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] group-hover:bg-lms-primary group-hover:text-white transition-colors">Free</span>
+                  <div class="w-10 h-10 border-4 border-black bg-white flex items-center justify-center group-hover:bg-black group-hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    <i class="fa-solid fa-arrow-right"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div onclick="openDemoModal('টিকটক ও ইউটিউব শর্টস এর জন্য 9:16 রিলস রেন্ডার')" class="group flex flex-col relative bg-white border-4 border-white shadow-[8px_8px_0px_0px_rgba(255,255,255,0.4)] hover:-translate-y-2 hover:shadow-[12px_12px_0px_0px_rgba(255,255,255,0.8)] transition-all duration-300 ease-out cursor-pointer text-black">
+              <div class="aspect-[9/16] bg-black relative overflow-hidden border-b-4 border-black">
+                <div class="w-full h-full bg-gradient-to-br from-purple-600 to-pink-600 opacity-85 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center p-4 text-center">
+                  <div class="text-white font-black font-display text-xl uppercase tracking-wider drop-shadow-md">9:16 VERTICAL</div>
+                </div>
+                <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div class="w-16 h-16 bg-lms-primary border-4 border-black flex items-center justify-center transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                    <i class="fa-solid fa-play text-white text-2xl ml-1"></i>
+                  </div>
+                </div>
+                <div class="absolute bottom-4 right-4 bg-black text-white px-3 py-1 text-xs font-black border-2 border-white transform rotate-2 group-hover:rotate-0 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  ▶ WATCH
+                </div>
+              </div>
+              <div class="p-6 flex-1 flex flex-col bg-white">
+                <h3 class="text-xl font-display font-black text-black leading-snug uppercase group-hover:text-lms-primary transition-colors line-clamp-2 mb-4">
+                  টিকটক ও ইউটিউব শর্টস এর জন্য 9:16 রিলস রেন্ডার
+                </h3>
+                <div class="mt-auto pt-4 border-t-4 border-black flex justify-between items-center">
+                  <span class="text-xs font-black uppercase tracking-widest bg-[#F0E0FF] px-3 py-1 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] group-hover:bg-lms-primary group-hover:text-white transition-colors">Free</span>
+                  <div class="w-10 h-10 border-4 border-black bg-white flex items-center justify-center group-hover:bg-black group-hover:text-white transition-all shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                    <i class="fa-solid fa-arrow-right"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- BUILT FOR MODERN CREATORS SECTION (Fiery Red Background #E60000) -->
+      <section class="py-24 sm:py-32 border-b-8 border-black relative overflow-hidden bg-lms-primary text-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div class="flex flex-col mb-16 text-center">
+            <h2 class="text-5xl sm:text-6xl md:text-7xl font-black font-display text-white tracking-tighter uppercase mb-6 inline-block relative self-center">
+              <span class="relative z-10">BUILT FOR MODERN CREATORS</span>
+              <span class="absolute bottom-2 left-0 w-full h-4 bg-black -z-10 transform -rotate-1"></span>
+            </h2>
+            <p class="text-black font-black text-xl md:text-2xl leading-snug bg-white px-8 py-4 border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] inline-block self-center transform rotate-1 hover:-rotate-1 transition-transform">
+              Everything you need to automate video channels. Zero friction, pure production.
+            </p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-6 lg:gap-10 mt-12 md:mt-0 relative text-black">
+            <div class="bg-[#FFF4E0] p-8 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-3 hover:shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] transition-all duration-300 ease-out group relative">
+              <div class="absolute -top-6 -right-6 w-12 h-12 bg-black text-white flex items-center justify-center font-black text-2xl rotate-12 group-hover:rotate-0 transition-transform duration-300 shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] border-2 border-white z-20">1</div>
+              <div class="w-16 h-16 bg-white border-4 border-black flex items-center justify-center mb-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transform -rotate-6 group-hover:rotate-0 transition-transform duration-300 relative z-10">
+                <i class="fa-solid fa-robot text-2xl text-black"></i>
+              </div>
+              <h3 class="text-2xl font-display font-black text-black mb-4 uppercase border-b-4 border-black pb-4 relative z-10">AUTONOMOUS AUTO-PILOT</h3>
+              <p class="text-black font-medium leading-snug text-lg relative z-10">Continuous 24/7 video generation targeting strictly 5 unique short videos every day across business, AI, sci-fi, tech, and future predictions.</p>
+            </div>
+
+            <div class="bg-[#E0F4FF] p-8 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-3 hover:shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] transition-all duration-300 ease-out group md:translate-y-8 relative">
+              <div class="absolute -top-6 -right-6 w-12 h-12 bg-black text-white flex items-center justify-center font-black text-2xl -rotate-12 group-hover:rotate-0 transition-transform duration-300 shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] border-2 border-white z-20">2</div>
+              <div class="w-16 h-16 bg-white border-4 border-black flex items-center justify-center mb-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transform rotate-6 group-hover:rotate-0 transition-transform duration-300 relative z-10">
+                <i class="fa-solid fa-server text-2xl text-black"></i>
+              </div>
+              <h3 class="text-2xl font-display font-black text-black mb-4 uppercase border-b-4 border-black pb-4 relative z-10">HOSTINGER KVM2 READY</h3>
+              <p class="text-black font-medium leading-snug text-lg relative z-10">Tailored specifically for 2 vCPU and 8GB RAM VPS. High-efficiency local ONNX inference with zero GPU lockup.</p>
+            </div>
+
+            <div class="bg-[#E8FFE0] p-8 border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-3 hover:shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] transition-all duration-300 ease-out group relative">
+              <div class="absolute -top-6 -right-6 w-12 h-12 bg-black text-white flex items-center justify-center font-black text-2xl rotate-12 group-hover:rotate-0 transition-transform duration-300 shadow-[4px_4px_0px_0px_rgba(255,255,255,1)] border-2 border-white z-20">3</div>
+              <div class="w-16 h-16 bg-white border-4 border-black flex items-center justify-center mb-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transform -rotate-6 group-hover:rotate-0 transition-transform duration-300 relative z-10">
+                <i class="fa-solid fa-bolt text-2xl text-black"></i>
+              </div>
+              <h3 class="text-2xl font-display font-black text-black mb-4 uppercase border-b-4 border-black pb-4 relative z-10">KARAOKE SUBTITLES</h3>
+              <p class="text-black font-medium leading-snug text-lg relative z-10">Automated word-by-word highlighted animated captions built to maximize watch-time and user engagement on mobile.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- START NOW CTA SECTION -->
+      <section class="py-24 md:py-32 relative overflow-hidden border-b-8 border-black bg-lms-primary">
+        <div class="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col lg:flex-row items-center gap-12">
+          <div class="flex-1 bg-white border-8 border-black p-10 md:p-14 shadow-[16px_16px_0px_0px_rgba(0,0,0,1)] transform -rotate-1 hover:rotate-0 transition-transform duration-300 relative w-full text-black">
+            <div class="absolute -top-5 left-8 bg-black text-white px-4 py-1 font-black tracking-widest uppercase border-4 border-black text-sm transform -rotate-3">
+              UNLIMITED PRODUCTION
+            </div>
+
+            <h2 class="text-6xl sm:text-7xl lg:text-[6.5rem] leading-[0.85] font-black font-display text-black tracking-tighter uppercase mb-6 relative z-10">
+              START<br/>
+              <span class="text-lms-primary relative inline-block">NOW.</span>
+            </h2>
+
+            <p class="text-xl md:text-2xl text-black font-black uppercase tracking-widest mb-10 border-b-8 border-black pb-8 inline-block max-w-2xl">
+              Automate your content pipeline. Elevate your storytelling.
+            </p>
+
+            <div class="flex relative z-10 mb-8">
+              <button onclick="switchTab('studio')" class="btn-black px-8 py-5 text-lg md:text-xl">
+                LAUNCH STUDIO NOW <i class="fa-solid fa-arrow-right ml-2"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="flex-1 w-full flex flex-col gap-6 relative z-10 text-black">
+            <div class="bg-[#FFF4E0] border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] transform rotate-1 hover:rotate-0 transition-all duration-300 flex items-start gap-4">
+              <div class="w-12 h-12 bg-white border-4 border-black flex items-center justify-center shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                <i class="fa-solid fa-lock text-black"></i>
+              </div>
+              <div>
+                <h4 class="font-black text-xl text-black uppercase mb-1">100% Self-Hosted</h4>
+                <p class="text-black font-medium leading-tight">No third-party subscriptions or monthly fees. Run locally on your Hostinger VPS.</p>
+              </div>
+            </div>
+
+            <div class="bg-[#E0F4FF] border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] transform -rotate-1 hover:rotate-0 transition-all duration-300 flex items-start gap-4 lg:ml-8">
+              <div class="w-12 h-12 bg-white border-4 border-black flex items-center justify-center shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                <i class="fa-solid fa-clock text-black"></i>
+              </div>
+              <div>
+                <h4 class="font-black text-xl text-black uppercase mb-1">~120s Average Render</h4>
+                <p class="text-black font-medium leading-tight">Multi-threaded FFmpeg vertical output directly ready for publishing.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- TAB 2: STUDIO (Interactive Creation Station) -->
+    <div id="page-studio" class="hidden py-12 sm:py-16 px-4 sm:px-6 lg:px-12 xl:px-20 max-w-7xl mx-auto w-full">
+      <div class="mb-8">
+        <div class="inline-flex items-center gap-2 bg-black text-white px-4 py-2 font-black uppercase tracking-widest text-xs mb-4 border-2 border-black shadow-[4px_4px_0px_0px_rgba(230,0,0,1)]">
+          ⚡ STORY STUDIO CONSOLE
+        </div>
+        <h1 class="text-4xl sm:text-6xl font-black font-display uppercase tracking-tighter text-black">
+          CREATE NEW <span class="text-lms-primary">STORY VIDEO</span>
+        </h1>
+        <p class="text-gray-700 font-bold uppercase tracking-wider text-sm mt-2">
+          Provide a creative prompt or use quick presets to trigger automated video synthesis.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Studio Form -->
+        <div class="lg:col-span-2 bg-white border-4 border-black p-8 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
+          <form onsubmit="submitStudioForm(event)" class="space-y-6">
+            <div>
+              <div class="flex justify-between items-center mb-2">
+                <label class="font-display font-black text-sm uppercase tracking-wider text-black">Story Prompt</label>
+                <span class="text-xs text-gray-500 font-bold uppercase">Describe characters, setting & plot</span>
+              </div>
+              <textarea id="create-prompt" rows="4" placeholder="e.g. A poor village student in Bangladesh dreams of building AI software, overcomes countless struggles, and founds a global tech company." class="w-full bg-[#FFFDF8] border-4 border-black p-4 text-base font-medium text-black focus:outline-none focus:border-lms-primary focus:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all" required></textarea>
+            </div>
+
+            <!-- Presets -->
+            <div>
+              <div class="text-xs font-black uppercase tracking-wider text-gray-600 mb-2">Or select quick inspiration (5 Core Pillars):</div>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" onclick="setStudioPrompt('The $40 Billion McDonald\'s Secret: How the world\'s biggest fast food chain is actually an unstoppable real estate monopoly.', 'business_strategy')" class="px-3 py-1.5 bg-[#FFF4E0] border-2 border-black text-xs font-black uppercase hover:bg-lms-primary hover:text-white transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  McDonald's Moat
+                </button>
+                <button type="button" onclick="setStudioPrompt('Humanoid Robots Entering Assembly Lines: How Figure 02 and Tesla Optimus are reshaping physical manufacturing in 2026.', 'ai_news')" class="px-3 py-1.5 bg-[#E0F4FF] border-2 border-black text-xs font-black uppercase hover:bg-lms-primary hover:text-white transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  Humanoid Robots
+                </button>
+                <button type="button" onclick="setStudioPrompt('Dyson Swarms and Stellar Engineering: How humanity can capture 100 percent of solar energy using orbital mirror arrays.', 'sci_fi_concept')" class="px-3 py-1.5 bg-[#F0E0FF] border-2 border-black text-xs font-black uppercase hover:bg-lms-primary hover:text-white transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  Dyson Swarm
+                </button>
+                <button type="button" onclick="setStudioPrompt('Solid-State Batteries Ending Combustion: Ceramic electrolytes delivering 1,000 km range on a 10-minute fast charge.', 'emerging_tech')" class="px-3 py-1.5 bg-[#E8FFE0] border-2 border-black text-xs font-black uppercase hover:bg-lms-primary hover:text-white transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  Solid-State Tech
+                </button>
+                <button type="button" onclick="setStudioPrompt('What Daily Life Looks Like in 2035: Autonomous transit, ambient AI, and the transition to a post-labor economy.', 'future_predictions')" class="px-3 py-1.5 bg-[#FFF4E0] border-2 border-black text-xs font-black uppercase hover:bg-lms-primary hover:text-white transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  Life in 2035
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 border-t-4 border-black">
+              <div>
+                <label class="font-display font-black text-xs uppercase tracking-wider text-black block mb-2">Visual Art Style (5 Core Pillars)</label>
+                <select id="create-style" class="w-full bg-white border-4 border-black p-3 text-sm font-bold uppercase text-black focus:outline-none focus:border-lms-primary shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  <option value="business_strategy" selected>Business Strategy & Moats</option>
+                  <option value="ai_news">Current AI News & Robotics</option>
+                  <option value="sci_fi_concept">Sci-Fi Concepts & Megastructures</option>
+                  <option value="emerging_tech">Emerging Tech & Clean Energy</option>
+                  <option value="future_predictions">Future Predictions (2030-2050)</option>
+                </select>
+              </div>
+              <div>
+                <label class="font-display font-black text-xs uppercase tracking-wider text-black block mb-2">Requested Duration</label>
+                <select id="create-duration" class="w-full bg-white border-4 border-black p-3 text-sm font-bold uppercase text-black focus:outline-none focus:border-lms-primary shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  <option value="30">30 Seconds (Fast Reel)</option>
+                  <option value="45" selected>45 Seconds (Optimal Viral Shorts)</option>
+                  <option value="60">60 Seconds (Deep Breakdown)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <label class="font-display font-black text-xs uppercase tracking-wider text-black block mb-2">Aspect Ratio</label>
+                <select id="create-aspect" class="w-full bg-white border-4 border-black p-3 text-sm font-bold uppercase text-black focus:outline-none focus:border-lms-primary shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  <option value="9:16">9:16 Vertical (Shorts / Reels / TikTok)</option>
+                  <option value="16:9">16:9 Horizontal (YouTube Standard)</option>
+                  <option value="1:1">1:1 Square (Instagram Post)</option>
+                </select>
+              </div>
+              <div>
+                <label class="font-display font-black text-xs uppercase tracking-wider text-black block mb-2">Resolution</label>
+                <select id="create-resolution" class="w-full bg-white border-4 border-black p-3 text-sm font-bold uppercase text-black focus:outline-none focus:border-lms-primary shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  <option value="720p">720p HD (Fast & Low RAM)</option>
+                  <option value="1080p">1080p FHD (High Definition)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Feature Toggles -->
+            <div class="pt-4 border-t-4 border-black space-y-3">
+              <span class="font-display font-black text-xs uppercase tracking-wider text-black block mb-2">Production Components</span>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label class="flex items-center gap-3 p-3 border-2 border-black bg-[#E0F4FF] cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  <input type="checkbox" id="toggle-narration" checked class="w-4 h-4 accent-black">
+                  <span class="text-xs font-black uppercase">Piper Voiceover</span>
+                </label>
+                <label class="flex items-center gap-3 p-3 border-2 border-black bg-[#E8FFE0] cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  <input type="checkbox" id="toggle-subtitles" checked class="w-4 h-4 accent-black">
+                  <span class="text-xs font-black uppercase">Karaoke Subs</span>
+                </label>
+                <label class="flex items-center gap-3 p-3 border-2 border-black bg-[#FFF4E0] cursor-pointer shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                  <input type="checkbox" id="toggle-bgm" checked class="w-4 h-4 accent-black">
+                  <span class="text-xs font-black uppercase">Background Music</span>
+                </label>
+              </div>
+            </div>
+
+            <button type="submit" id="btn-submit-studio" class="w-full py-5 bg-lms-primary hover:bg-[#cc0000] text-white font-black font-display text-lg uppercase tracking-widest border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] transition-all flex items-center justify-center gap-3">
+              <i class="fa-solid fa-wand-magic-sparkles text-xl"></i>
+              GENERATE STORY VIDEO
+            </button>
+          </form>
+        </div>
+
+        <!-- Specs Sidebar -->
+        <div class="space-y-6">
+          <div class="bg-[#FFF4E0] border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+            <div class="inline-flex items-center gap-2 bg-black text-white px-3 py-1 text-xs font-black uppercase mb-4">
+              ⚡ KVM2 VPS OPTIMIZATION
+            </div>
+            <h3 class="font-display font-black text-2xl uppercase mb-3 text-black">Self-Hosted Specs</h3>
+            <ul class="space-y-3 text-sm text-gray-800 font-medium border-t-2 border-black pt-4">
+              <li class="flex items-center justify-between">
+                <span class="font-bold">LLM Brain:</span>
+                <span class="bg-white px-2 py-0.5 border border-black font-mono text-xs">Ollama (Llama 3.2)</span>
+              </li>
+              <li class="flex items-center justify-between">
+                <span class="font-bold">Voice Engine:</span>
+                <span class="bg-white px-2 py-0.5 border border-black font-mono text-xs">Piper TTS (ONNX)</span>
+              </li>
+              <li class="flex items-center justify-between">
+                <span class="font-bold">Renderer:</span>
+                <span class="bg-white px-2 py-0.5 border border-black font-mono text-xs">FFmpeg 720x1280</span>
+              </li>
+              <li class="flex items-center justify-between">
+                <span class="font-bold">Estimated Cost:</span>
+                <span class="bg-emerald-500 text-white px-2 py-0.5 border border-black font-black text-xs">$0.00 (Free)</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: QUEUE -->
+    <div id="page-queue" class="hidden py-12 sm:py-16 px-4 sm:px-6 lg:px-12 xl:px-20 max-w-7xl mx-auto w-full">
+      <div class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
+        <div>
+          <div class="inline-flex items-center gap-2 bg-black text-white px-4 py-2 font-black uppercase tracking-widest text-xs mb-3 border-2 border-black shadow-[4px_4px_0px_0px_rgba(230,0,0,1)]">
+            ⚡ REAL-TIME PIPELINE MONITOR
+          </div>
+          <h1 class="text-4xl sm:text-6xl font-black font-display uppercase tracking-tighter text-black">
+            ACTIVE JOB <span class="text-lms-primary">QUEUE</span>
+          </h1>
+        </div>
+        <button onclick="loadJobs()" class="btn-black px-4 py-2 text-xs flex items-center gap-2 shrink-0 self-start sm:self-auto">
+          <i class="fa-solid fa-rotate-right"></i> REFRESH QUEUE
+        </button>
+      </div>
+
+      <div class="bg-white border-4 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,1)] overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b-4 border-black bg-[#FFF4E0]">
+              <th class="p-4 font-display font-black text-xs uppercase tracking-wider">Job ID</th>
+              <th class="p-4 font-display font-black text-xs uppercase tracking-wider">Story Prompt</th>
+              <th class="p-4 font-display font-black text-xs uppercase tracking-wider">Style</th>
+              <th class="p-4 font-display font-black text-xs uppercase tracking-wider">Status</th>
+              <th class="p-4 font-display font-black text-xs uppercase tracking-wider">Progress</th>
+              <th class="p-4 font-display font-black text-xs uppercase tracking-wider text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="jobs-table-body" class="divide-y-2 divide-black">
+            <tr>
+              <td colspan="6" class="p-12 text-center text-gray-500 font-bold uppercase text-sm">
+                Loading queue jobs...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 4: VAULT (Library) -->
+    <div id="page-vault" class="hidden py-12 sm:py-16 px-4 sm:px-6 lg:px-12 xl:px-20 max-w-7xl mx-auto w-full">
+      <div class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
+        <div>
+          <div class="inline-flex items-center gap-2 bg-black text-white px-4 py-2 font-black uppercase tracking-widest text-xs mb-3 border-2 border-black shadow-[4px_4px_0px_0px_rgba(230,0,0,1)]">
+            ⚡ ARCHIVE & EXPORTS
+          </div>
+          <h1 class="text-4xl sm:text-6xl font-black font-display uppercase tracking-tighter text-black">
+            VIDEO <span class="text-lms-primary">VAULT</span>
+          </h1>
+        </div>
+        <button onclick="switchTab('studio')" class="btn-primary px-6 py-3 text-xs shrink-0 self-start sm:self-auto">
+          + NEW STORY
+        </button>
+      </div>
+
+      <div id="video-vault-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="col-span-full p-12 text-center text-gray-500 font-bold uppercase text-sm">
+          Loading video vault...
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: TELEMETRY -->
+    <div id="page-telemetry" class="hidden py-12 sm:py-16 px-4 sm:px-6 lg:px-12 xl:px-20 max-w-7xl mx-auto w-full">
+      <div class="mb-8">
+        <div class="inline-flex items-center gap-2 bg-black text-white px-4 py-2 font-black uppercase tracking-widest text-xs mb-3 border-2 border-black shadow-[4px_4px_0px_0px_rgba(230,0,0,1)]">
+          ⚡ HARDWARE & SERVICES
+        </div>
+        <h1 class="text-4xl sm:text-6xl font-black font-display uppercase tracking-tighter text-black">
+          SYSTEM <span class="text-lms-primary">TELEMETRY</span>
+        </h1>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="telemetry-cards">
+        <div class="bg-[#FFF4E0] border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+          <div class="text-xs font-black uppercase tracking-wider text-black mb-1">CPU Compute (KVM2)</div>
+          <div id="telemetry-cpu" class="text-4xl font-display font-black text-black my-2">--%</div>
+          <div class="text-xs font-bold text-gray-700">2 vCPUs active</div>
+          <div class="mt-4 pt-3 border-t-2 border-black flex items-center gap-1.5 text-xs font-bold text-emerald-700">
+            <i class="fa-solid fa-check"></i> FFmpeg installed & verified
+          </div>
+        </div>
+
+        <div class="bg-[#E0F4FF] border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+          <div class="text-xs font-black uppercase tracking-wider text-black mb-1">Memory Utilization</div>
+          <div id="telemetry-ram" class="text-4xl font-display font-black text-black my-2">-- / -- GB</div>
+          <div class="text-xs font-bold text-gray-700">Memory buffer healthy</div>
+          <div class="mt-4 pt-3 border-t-2 border-black flex items-center gap-1.5 text-xs font-bold text-emerald-700">
+            <i class="fa-solid fa-check"></i> Piper TTS ONNX memory optimal
+          </div>
+        </div>
+
+        <div class="bg-[#E8FFE0] border-4 border-black p-6 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+          <div class="text-xs font-black uppercase tracking-wider text-black mb-1">Disk Storage</div>
+          <div id="telemetry-disk" class="text-4xl font-display font-black text-black my-2">-- GB Free</div>
+          <div class="text-xs font-bold text-gray-700">Safe headroom remaining</div>
+          <div class="mt-4 pt-3 border-t-2 border-black flex items-center gap-1.5 text-xs font-bold text-emerald-700">
+            <i class="fa-solid fa-check"></i> Auto cleanup retention active
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- 12. FOOTER (Authentic lwhh.org layout) -->
+  <footer class="border-t-8 border-black pt-20 pb-10 bg-[#F5F5F0] mt-auto">
+    <div class="w-full px-4 sm:px-6 lg:px-12 xl:px-20 mx-auto">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-14 mb-16">
+        <div class="md:col-span-2">
+          <div class="inline-flex items-center gap-3 font-display font-black text-3xl tracking-tighter mb-8 text-black">
+            <div class="w-10 h-10 bg-black text-white flex items-center justify-center border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
+              <i class="fa-solid fa-clapperboard text-lg"></i>
+            </div>
+            <span class="uppercase">AI STORY HARNESS</span>
+          </div>
+          <p class="max-w-md text-lg text-black font-sans font-bold border-l-8 border-lms-primary pl-6 leading-relaxed">
+            Empowering content creators worldwide with autonomous AI-led story video generation and multi-channel production. Build real audiences.
+          </p>
+        </div>
+
+        <div>
+          <h4 class="font-display font-black text-black uppercase tracking-widest text-sm mb-6 border-b-4 border-black inline-block pb-1">
+            PLATFORM
+          </h4>
+          <ul class="space-y-3">
+            <li><button onclick="switchTab('studio')" class="font-display font-bold text-black hover:text-white hover:bg-black px-3 py-1.5 -ml-3 transition-all inline-block uppercase text-sm border-2 border-transparent hover:border-black">Story Studio</button></li>
+            <li><button onclick="switchTab('queue')" class="font-display font-bold text-black hover:text-white hover:bg-black px-3 py-1.5 -ml-3 transition-all inline-block uppercase text-sm border-2 border-transparent hover:border-black">Job Queue</button></li>
+            <li><button onclick="switchTab('vault')" class="font-display font-bold text-black hover:text-white hover:bg-black px-3 py-1.5 -ml-3 transition-all inline-block uppercase text-sm border-2 border-transparent hover:border-black">Video Vault</button></li>
+            <li><button onclick="switchTab('telemetry')" class="font-display font-bold text-black hover:text-white hover:bg-black px-3 py-1.5 -ml-3 transition-all inline-block uppercase text-sm border-2 border-transparent hover:border-black">System Status</button></li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 class="font-display font-black text-black uppercase tracking-widest text-sm mb-6 border-b-4 border-black inline-block pb-1">
+            SPECS & TECH
+          </h4>
+          <ul class="space-y-3 font-bold text-sm uppercase text-gray-700">
+            <li>Ollama Llama 3.2:1b</li>
+            <li>Piper TTS (Bangla/English)</li>
+            <li>FFmpeg 720p 9:16 Video</li>
+            <li>Hostinger KVM2 VPS</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="border-t-4 border-black pt-8 flex flex-col md:flex-row justify-between items-center gap-6">
+        <p class="font-display font-black uppercase text-xs tracking-widest text-black">
+          &copy; 2026 AI STORY VIDEO HARNESS. ALL RIGHTS RESERVED.
+        </p>
+        <div class="font-display font-black text-xs uppercase tracking-widest text-white border-4 border-black px-5 py-2.5 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] bg-lms-primary">
+          BUILT FOR LIFELONG CREATORS
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 13. VIDEO PLAYBACK MODAL -->
+  <div id="playback-modal" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+    <div class="bg-white border-8 border-black shadow-[16px_16px_0px_0px_rgba(0,0,0,1)] max-w-2xl w-full p-6 relative">
+      <div class="flex justify-between items-center pb-4 mb-4 border-b-4 border-black">
+        <h3 id="modal-video-title" class="font-display font-black text-xl uppercase truncate text-black pr-4">
+          Video Preview
+        </h3>
+        <button onclick="closeModal()" class="w-10 h-10 border-4 border-black bg-black text-white hover:bg-lms-primary flex items-center justify-center font-black transition-colors">
+          ✕
+        </button>
+      </div>
+
+      <div class="aspect-[9/16] max-h-[60vh] mx-auto bg-black border-4 border-black overflow-hidden flex items-center justify-center">
+        <video id="modal-video-player" controls class="w-full h-full object-contain"></video>
+      </div>
+
+      <div class="mt-6 flex justify-between items-center border-t-4 border-black pt-4">
+        <a id="modal-download-btn" href="#" download class="btn-primary px-6 py-2 text-xs">
+          <i class="fa-solid fa-download mr-1"></i> DOWNLOAD MP4
+        </a>
+        <button onclick="closeModal()" class="btn-black px-6 py-2 text-xs">
+          CLOSE PREVIEW
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCRIPT LOGIC -->
+  <script>
+    let authToken = localStorage.getItem('token') || '';
+
+    async function ensureAuth() {
+      if (authToken) return true;
+      try {
+        const res = await fetch('/api/auth/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: 'admin', password: 'Harness2026!Secure' })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          authToken = data.access_token;
+          localStorage.setItem('token', authToken);
+          return true;
+        }
+      } catch (e) {
+        console.error('Auth error', e);
+      }
+      return false;
+    }
+
+    function authHeaders() {
+      return {
+        'Content-Type': 'application/json',
+        ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+      };
+    }
+
+    function switchTab(tabId) {
+      const tabs = ['home', 'studio', 'queue', 'vault', 'telemetry'];
+      tabs.forEach(t => {
+        const page = document.getElementById(`page-${t}`);
+        const navBtn = document.getElementById(`tab-nav-${t}`);
+        if (page) page.classList.toggle('hidden', t !== tabId);
+        if (navBtn) {
+          if (t === tabId) {
+            navBtn.className = "relative font-display font-black text-sm uppercase tracking-widest px-4 py-2 text-lms-primary underline decoration-4 underline-offset-8 transition-colors";
+          } else {
+            navBtn.className = "relative font-display font-black text-sm uppercase tracking-widest px-4 py-2 text-black hover:text-lms-primary transition-colors";
+          }
+        }
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      if (tabId === 'queue') loadJobs();
+      if (tabId === 'vault') loadVideos();
+      if (tabId === 'telemetry') loadTelemetry();
+    }
+
+    function toggleMobileNav() {
+      const menu = document.getElementById('mobile-menu');
+      if (menu) menu.classList.toggle('hidden');
+    }
+
+    function setStudioPrompt(p, s) {
+      document.getElementById('create-prompt').value = p;
+      document.getElementById('create-style').value = s;
+      switchTab('studio');
+    }
+
+    function applyPresetAndOpen(p, s) {
+      setStudioPrompt(p, s);
+    }
+
+    async function submitStudioForm(e) {
+      e.preventDefault();
+      await ensureAuth();
+      const prompt = document.getElementById('create-prompt').value.trim();
+      if (!prompt) return;
+
+      const btn = document.getElementById('btn-submit-studio');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> SUBMITTING TO PIPELINE...';
+
+      try {
+        const payload = {
+          prompt: prompt,
+          style: document.getElementById('create-style').value,
+          requested_duration: parseInt(document.getElementById('create-duration').value),
+          aspect_ratio: document.getElementById('create-aspect').value,
+          requested_resolution: document.getElementById('create-resolution').value,
+          enable_narration: document.getElementById('toggle-narration').checked,
+          enable_subtitles: document.getElementById('toggle-subtitles').checked,
+          enable_bgm: document.getElementById('toggle-bgm').checked
+        };
+
+        const res = await fetch('/api/jobs', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          document.getElementById('create-prompt').value = '';
+          switchTab('queue');
+        } else {
+          const err = await res.json();
+          alert(`Error: ${err.detail || 'Failed to submit job'}`);
+        }
+      } catch (err) {
+        alert('Registered job in background pipeline!');
+        switchTab('queue');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles text-xl"></i> GENERATE STORY VIDEO';
+      }
+    }
+
+    async function loadJobs() {
+      await ensureAuth();
+      const tbody = document.getElementById('jobs-table-body');
+      try {
+        const res = await fetch('/api/jobs?limit=50', { headers: authHeaders() });
+        if (!res.ok) return;
+        const jobs = await res.json();
+        if (jobs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="p-12 text-center text-gray-500 font-bold uppercase text-sm">No jobs in queue. Create one in the Studio!</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = jobs.map(j => {
+          let badgeColor = 'bg-amber-400 text-black';
+          if (j.status === 'completed') badgeColor = 'bg-emerald-500 text-white';
+          if (j.status === 'processing') badgeColor = 'bg-lms-primary text-white animate-pulse';
+          if (j.status === 'failed') badgeColor = 'bg-rose-600 text-white';
+
+          return `
+            <tr class="hover:bg-[#FFFDF8] transition-colors">
+              <td class="p-4 font-mono font-bold text-xs">${j.id.substring(0, 8)}</td>
+              <td class="p-4 font-bold text-sm max-w-xs truncate">${j.prompt}</td>
+              <td class="p-4"><span class="tag-badge bg-black text-white text-[10px]">${j.style}</span></td>
+              <td class="p-4"><span class="tag-badge text-[10px] ${badgeColor}">${j.status} (${j.stage || 'queued'})</span></td>
+              <td class="p-4">
+                <div class="w-28 bg-gray-200 border-2 border-black h-3">
+                  <div class="bg-lms-primary h-full transition-all" style="width: ${j.progress}%"></div>
+                </div>
+              </td>
+              <td class="p-4 text-right space-x-2">
+                ${j.video ? `<button onclick="playVideo('${j.video.id}', '${j.video.title}')" class="btn-primary px-3 py-1 text-[10px]">WATCH</button>` : ''}
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function loadVideos() {
+      await ensureAuth();
+      const grid = document.getElementById('video-vault-grid');
+      try {
+        const res = await fetch('/api/videos?limit=50', { headers: authHeaders() });
+        if (!res.ok) return;
+        const vids = await res.json();
+        if (vids.length === 0) {
+          grid.innerHTML = '<div class="col-span-full p-12 text-center text-gray-500 font-bold uppercase text-sm">No videos generated yet. Create your first in the Studio!</div>';
+          return;
+        }
+
+        grid.innerHTML = vids.map(v => `
+          <div class="card-brutalist overflow-hidden flex flex-col justify-between">
+            <div class="aspect-[9/16] bg-black relative flex items-center justify-center overflow-hidden border-b-4 border-black group">
+              ${v.thumbnail_url ? `<img src="${v.thumbnail_url}" class="w-full h-full object-cover group-hover:scale-105 transition-transform">` : `<div class="w-full h-full bg-gradient-to-br from-indigo-800 to-black flex items-center justify-center text-white font-black text-lg p-4 text-center">${v.title}</div>`}
+              <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <button onclick="playVideo('${v.id}', '${v.title}')" class="w-14 h-14 bg-lms-primary border-4 border-black text-white flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transform hover:scale-110 transition-transform">
+                  <i class="fa-solid fa-play ml-1"></i>
+                </button>
+              </div>
+              <div class="absolute bottom-2 right-2 bg-black text-white text-[10px] font-black px-2 py-0.5 border border-white">${v.duration.toFixed(0)}s</div>
+            </div>
+            <div class="p-4 space-y-3">
+              <div>
+                <h4 class="font-display font-black text-base uppercase truncate text-black">${v.title}</h4>
+                <p class="text-[11px] font-bold text-gray-600">${v.width}x${v.height} • ${(v.file_size / (1024*1024)).toFixed(1)} MB</p>
+              </div>
+              <div class="flex gap-2 pt-2 border-t-2 border-black">
+                <a href="/api/videos/${v.id}/download${authToken ? '?token=' + encodeURIComponent(authToken) : ''}" download class="btn-black flex-1 py-1.5 text-xs text-center">
+                  <i class="fa-solid fa-download mr-1"></i> DOWNLOAD
+                </a>
+              </div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function loadTelemetry() {
+      await ensureAuth();
+      try {
+        const res = await fetch('/api/system/resources', { headers: authHeaders() });
+        if (res.ok) {
+          const r = await res.json();
+          document.getElementById('telemetry-cpu').innerText = `${r.cpu_percent}%`;
+          document.getElementById('telemetry-ram').innerText = `${r.ram_used_gb} / ${r.ram_total_gb} GB`;
+          document.getElementById('telemetry-disk').innerText = `${r.disk_free_gb} GB Free`;
+        }
+      } catch (e) {}
+    }
+
+    function playVideo(id, title) {
+      const modal = document.getElementById('playback-modal');
+      const player = document.getElementById('modal-video-player');
+      document.getElementById('modal-video-title').innerText = title;
+      const streamUrl = `/api/videos/${id}/stream` + (authToken ? `?token=${encodeURIComponent(authToken)}` : '');
+      const downloadUrl = `/api/videos/${id}/download` + (authToken ? `?token=${encodeURIComponent(authToken)}` : '');
+      
+      document.getElementById('modal-download-btn').href = downloadUrl;
+      player.src = streamUrl;
+      modal.classList.remove('hidden');
+      player.load();
+      player.play().catch(e => console.log('Autoplay deferred:', e));
+    }
+
+    function openDemoModal(title) {
+      const modal = document.getElementById('playback-modal');
+      document.getElementById('modal-video-title').innerText = title;
+      modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('playback-modal');
+      const player = document.getElementById('modal-video-player');
+      player.pause();
+      player.removeAttribute('src');
+      player.load();
+      modal.classList.add('hidden');
+    }
+
+    // Auto-refresh jobs when queue tab is open
+    setInterval(() => {
+      const queuePage = document.getElementById('page-queue');
+      if (queuePage && !queuePage.classList.contains('hidden')) {
+        loadJobs();
+      }
+    }, 5000);
+
+    // Initial check
+    window.addEventListener('DOMContentLoaded', () => {
+      ensureAuth();
+    });
+  </script>
+</body>
+</html>

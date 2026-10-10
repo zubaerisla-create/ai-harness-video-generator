@@ -1,0 +1,19 @@
+[Unit]
+Description=AI Story Video Generation Harness Backend & Worker
+After=network.target ollama.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ai-story-harness
+Environment="PYTHONPATH=/opt/ai-story-harness"
+Environment="PATH=/opt/ai-story-harness/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/opt/ai-story-harness/venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

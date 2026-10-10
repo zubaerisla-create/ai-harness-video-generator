@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Outputs and user artifacts
+outputs/*.mp4
+outputs/*.jpg
+outputs/*.wav
+outputs/*.srt
+outputs/*.ass
+outputs/tmp/
+backend/data/*.db
+
+# Sensitive files
+.env
+*.pem
+*.key
+
+# Model weights
+models/piper/*.onnx
+models/piper/*.onnx.json
+models/checkpoints/
+
+# Node / Next.js
+node_modules/
+.next/
+dist/
+build/
+
+# IDE & OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
