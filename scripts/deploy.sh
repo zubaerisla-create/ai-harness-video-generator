@@ -28,6 +28,7 @@ systemctl restart ai-story-backend.service
 echo "Updating frontend dependencies and building production assets..."
 cd /opt/ai-story-harness/frontend
 npm install --prefer-offline --no-audit
+rm -rf .next
 npm run build
 
 echo "Reloading frontend service with PM2..."
