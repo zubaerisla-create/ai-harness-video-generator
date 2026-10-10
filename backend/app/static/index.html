@@ -3,6 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script>
+    // Automatically redirect browser to full Next.js application on port 80
+    const host = window.location.hostname || "31.97.180.176";
+    let target = "http://" + host;
+    const path = window.location.pathname.toLowerCase();
+    if (path.includes("vault")) target += "/vault";
+    else if (path.includes("studio")) target += "/studio";
+    else if (path.includes("queue")) target += "/queue";
+    else if (path.includes("telemetry")) target += "/telemetry";
+    else target += "/";
+    if (window.location.port === "8000") {
+      window.location.replace(target);
+    }
+  </script>
   <title>AI Story Video Harness | Automated Storytelling Pipeline</title>
   
   <!-- Google Fonts: Bricolage Grotesque & Space Grotesk (Authentic lwhh.org typography) -->

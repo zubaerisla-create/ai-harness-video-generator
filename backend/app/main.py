@@ -1,8 +1,8 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from backend.app.config import settings
 from backend.app.database.session import init_db, AsyncSessionLocal
@@ -77,15 +77,23 @@ async def api_health():
 
 @app.get("/")
 @app.get("/dashboard")
-async def dashboard_index():
-    from fastapi.responses import FileResponse
-    from pathlib import Path
-    static_file = Path(__file__).parent / "static" / "index.html"
-    if static_file.exists():
-        return FileResponse(str(static_file), media_type="text/html")
-    return {
-        "service": "AI Story Video Generation Harness",
-        "status": "operational",
-        "docs_url": "/docs"
-    }
+async def dashboard_index(request: Request):
+    """
+    Redirect browser traffic on port 8000 directly to the Next.js web application on port 80.
+    """
+    host = request.headers.get("host", "").split(":")[0] or "31.97.180.176"
+    return RedirectResponse(url=f"http://{host}/", status_code=307)
+
+@app.get("/{full_path:path}")
+async def catchall_redirect(request: Request, full_path: str):
+    """
+    Redirect non-API routes (e.g. /vault, /VAULT, /studio, /queue, /telemetry) from port 8000 to port 80.
+    """
+    # Allow Swagger docs, OpenAPI spec, and direct API endpoints to pass through
+    if full_path.startswith("api/") or full_path in ["docs", "redoc", "openapi.json", "favicon.ico"]:
+        raise HTTPException(status_code=404, detail="Not Found")
+    
+    clean_path = full_path.lower().strip("/")
+    host = request.headers.get("host", "").split(":")[0] or "31.97.180.176"
+    return RedirectResponse(url=f"http://{host}/{clean_path}", status_code=307)
 
