@@ -1,16 +1,44 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Sparkles,
   RefreshCw,
   Zap,
   CheckCircle2,
-  Sliders,
+  Film,
+  Play,
+  Download,
+  AlertTriangle,
+  ArrowRight,
+  Clock,
+  ExternalLink,
   ShieldCheck,
-  Film
+  Layers,
+  Check
 } from "lucide-react";
+import VideoModal from "../../components/VideoModal";
+
+interface JobInfo {
+  id: string;
+  prompt: string;
+  style: string;
+  status: string;
+  stage?: string;
+  progress: number;
+  requested_duration: number;
+  created_at?: string;
+  error_message?: string | null;
+  video?: {
+    id: string;
+    title: string;
+    duration: number;
+    download_url: string;
+    thumbnail_url?: string;
+  } | null;
+}
 
 const presets = [
   {
@@ -55,6 +83,11 @@ function StudioContent() {
   const [submitting, setSubmitting] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
+  // Active generation tracking
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeJob, setActiveJob] = useState<JobInfo | null>(null);
+  const [previewVideo, setPreviewVideo] = useState<{ id: string; title: string; url?: string } | null>(null);
+
   // Initialize from query parameters if present
   useEffect(() => {
     const qPrompt = searchParams.get("prompt");
@@ -62,6 +95,54 @@ function StudioContent() {
     if (qPrompt) setPrompt(qPrompt);
     if (qStyle) setStyle(qStyle);
   }, [searchParams]);
+
+  // Check if any job is currently processing or pending on page load
+  useEffect(() => {
+    const checkOngoingJobs = async () => {
+      try {
+        const res = await fetch("/api/jobs?limit=5");
+        if (res.ok) {
+          const list: JobInfo[] = await res.json();
+          const running = list.find((j) => j.status === "processing" || j.status === "pending");
+          if (running) {
+            setActiveJobId(running.id);
+            setActiveJob(running);
+          }
+        }
+      } catch {
+        // silent fallback
+      }
+    };
+    checkOngoingJobs();
+  }, []);
+
+  // Poll for active job progress until completed or failed
+  useEffect(() => {
+    if (!activeJobId) return;
+
+    let isSubscribed = true;
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch(`/api/jobs/${activeJobId}`);
+        if (res.ok) {
+          const data: JobInfo = await res.json();
+          if (isSubscribed) {
+            setActiveJob(data);
+          }
+        }
+      } catch {
+        // ignore transient network glitch
+      }
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 2500);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, [activeJobId]);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,23 +168,65 @@ function StudioContent() {
 
       if (res.ok) {
         const data = await res.json();
-        setStatusMsg("Job queued successfully! Redirecting to queue...");
-        setTimeout(() => {
-          router.push("/queue");
-        }, 1200);
+        setActiveJobId(data.id);
+        setActiveJob(data);
+        setStatusMsg("Video generation task submitted! Real-time progress is streaming below.");
       } else {
-        setStatusMsg("Job scheduled into production queue.");
-        setTimeout(() => {
-          router.push("/queue");
-        }, 1200);
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.detail || "Failed to submit job to server queue.");
       }
     } catch {
-      setStatusMsg("Job registered into pipeline! Redirecting to monitor...");
-      setTimeout(() => {
-        router.push("/queue");
-      }, 1200);
+      alert("Network error: Could not reach video synthesis server.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const getStageDescription = (stage?: string, progress?: number) => {
+    switch (stage) {
+      case "queued":
+      case "initializing":
+        return {
+          title: "1/4 Initializing Engine Pipeline",
+          desc: "Preparing canvas buffers and checking system resources...",
+          step: 1
+        };
+      case "planning":
+        return {
+          title: "2/4 Ollama LLM Scriptwriting",
+          desc: "Brainstorming hooks, scene flow, and 10 visual cues with Llama 3.2:1b...",
+          step: 2
+        };
+      case "visuals":
+        return {
+          title: "3/4 Synthesizing Visual Assets",
+          desc: "Generating 720x1280 cinematic backgrounds and kinetic gradients...",
+          step: 3
+        };
+      case "voicing":
+        return {
+          title: "4/5 Piper Neural Speech & Captions",
+          desc: "Synthesizing high-clarity voiceover and synchronizing word-level subtitles...",
+          step: 4
+        };
+      case "rendering":
+        return {
+          title: "5/5 FFmpeg 720p 9:16 Video Rendering",
+          desc: "Assembling video tracks, dynamic camera pans, and audio ducking into MP4...",
+          step: 5
+        };
+      case "done":
+        return {
+          title: "Generation Complete!",
+          desc: "720p 9:16 Vertical Video is ready for preview and download.",
+          step: 5
+        };
+      default:
+        return {
+          title: "Processing Video Pipeline",
+          desc: "Synthesizing multimedia story assets...",
+          step: 2
+        };
     }
   };
 
@@ -118,11 +241,162 @@ function StudioContent() {
           CREATE NEW <span className="text-lms-primary">STORY VIDEO</span>
         </h1>
         <p className="text-gray-700 font-bold uppercase tracking-wider text-sm mt-2 max-w-2xl">
-          Provide a creative narrative prompt or pick a preset. The pipeline synthesizes scripts with Ollama, speech with Piper TTS, and renders 720p 9:16 vertical video via FFmpeg.
+          Provide a creative narrative prompt or pick a preset. The pipeline synthesizes scripts with Ollama, speech with Piper TTS, and renders 720p 9:16 vertical video via FFmpeg in ~45-75 seconds.
         </p>
       </div>
 
-      {statusMsg && (
+      {/* Live Video Production Progress Monitor (Visible when a job is active or finished) */}
+      {activeJob && (
+        <div className="mb-10 bg-white border-4 border-black p-6 sm:p-8 shadow-brutalist-xl relative animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-6 border-b-4 border-black gap-4">
+            <div className="flex items-center gap-3">
+              <span
+                className={`tag-badge text-xs px-3 py-1 font-black ${
+                  activeJob.status === "completed"
+                    ? "bg-emerald-500 text-white"
+                    : activeJob.status === "failed"
+                    ? "bg-rose-600 text-white"
+                    : "bg-lms-primary text-white animate-pulse"
+                }`}
+              >
+                {activeJob.status === "completed"
+                  ? "🎉 VIDEO READY"
+                  : activeJob.status === "failed"
+                  ? "⚠️ FAILED"
+                  : "⚡ GENERATING VIDEO LIVE"}
+              </span>
+              <span className="font-mono text-xs font-bold text-gray-600">
+                JOB #{activeJob.id.substring(0, 8)}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Link
+                href="/queue"
+                className="btn-outline px-3 py-1.5 text-xs flex items-center gap-1.5"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                JOB QUEUE
+              </Link>
+              {activeJob.status === "completed" && (
+                <button
+                  onClick={() => {
+                    setActiveJob(null);
+                    setActiveJobId(null);
+                  }}
+                  className="btn-outline px-3 py-1.5 text-xs"
+                >
+                  NEW GENERATION
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <div className="text-xs font-black uppercase tracking-wider text-gray-500 mb-1">
+                Active Story Prompt:
+              </div>
+              <div className="font-display font-black text-lg text-black bg-[#FFFDF8] border-2 border-black p-3 shadow-brutalist-sm">
+                &ldquo;{activeJob.prompt}&rdquo;
+              </div>
+            </div>
+
+            {/* Progress Bar & Details */}
+            {activeJob.status !== "failed" && (
+              <div>
+                <div className="flex justify-between items-center mb-2 font-display font-black text-sm">
+                  <div className="flex items-center gap-2">
+                    {activeJob.status === "processing" && (
+                      <RefreshCw className="w-4 h-4 animate-spin text-lms-primary" />
+                    )}
+                    {activeJob.status === "completed" && (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    )}
+                    <span className="uppercase text-black">
+                      {getStageDescription(activeJob.stage, activeJob.progress).title}
+                    </span>
+                  </div>
+                  <span className="font-mono text-base font-black text-lms-primary">
+                    {activeJob.progress}%
+                  </span>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="w-full bg-gray-200 border-4 border-black h-6 p-0.5 shadow-brutalist-sm">
+                  <div
+                    className="bg-lms-primary h-full transition-all duration-500 flex items-center justify-end pr-2 text-[10px] font-black text-white"
+                    style={{ width: `${Math.max(activeJob.progress, 4)}%` }}
+                  >
+                    {activeJob.progress > 10 ? `${activeJob.progress}%` : ""}
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs font-bold text-gray-600 mt-2 gap-2">
+                  <p>{getStageDescription(activeJob.stage, activeJob.progress).desc}</p>
+                  {activeJob.status === "processing" && (
+                    <div className="flex items-center gap-1.5 text-amber-700 bg-amber-50 px-2 py-1 border border-amber-300 font-mono text-[11px] shrink-0">
+                      <Clock className="w-3.5 h-3.5" />
+                      Est. time: ~45-75 seconds on VPS
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Error Display */}
+            {activeJob.status === "failed" && (
+              <div className="p-4 bg-rose-50 border-4 border-rose-600 text-rose-900 font-bold text-sm">
+                <div className="flex items-center gap-2 font-black uppercase text-rose-700 mb-1">
+                  <AlertTriangle className="w-5 h-5" />
+                  Generation Error
+                </div>
+                <p>{activeJob.error_message || "An unexpected error occurred during synthesis."}</p>
+              </div>
+            )}
+
+            {/* Completed Actions & Video Player Button */}
+            {activeJob.status === "completed" && (
+              <div className="pt-4 border-t-4 border-black mt-6 flex flex-wrap items-center gap-4">
+                <button
+                  onClick={() =>
+                    setPreviewVideo({
+                      id: activeJob.video?.id || activeJob.id,
+                      title: activeJob.video?.title || activeJob.prompt,
+                      url: activeJob.video?.download_url || `/api/videos/${activeJob.video?.id}/download`,
+                    })
+                  }
+                  className="btn-primary px-6 py-3 text-sm flex items-center gap-2 shadow-brutalist-lg animate-bounce"
+                >
+                  <Play className="w-5 h-5 fill-white" />
+                  WATCH VIDEO NOW
+                </button>
+
+                {activeJob.video && (
+                  <a
+                    href={activeJob.video.download_url}
+                    download
+                    className="btn-outline px-6 py-3 text-sm flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    DOWNLOAD MP4 ({activeJob.video.duration?.toFixed(0)}s)
+                  </a>
+                )}
+
+                <Link
+                  href="/vault"
+                  className="btn-black px-6 py-3 text-sm flex items-center gap-2"
+                >
+                  <Film className="w-4 h-4" />
+                  OPEN IN VIDEO VAULT
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {statusMsg && !activeJob && (
         <div className="mb-8 p-4 bg-[#E8FFE0] border-4 border-black font-display font-black uppercase text-sm flex items-center gap-3 shadow-brutalist">
           <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
           <span>{statusMsg}</span>
@@ -283,13 +557,18 @@ function StudioContent() {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || (activeJob?.status === "processing")}
               className="w-full py-5 bg-lms-primary hover:bg-[#cc0000] text-white font-black font-display text-lg uppercase tracking-widest border-4 border-black shadow-brutalist-lg hover:shadow-brutalist-xl transition-all flex items-center justify-center gap-3 disabled:opacity-50"
             >
               {submitting ? (
                 <>
                   <RefreshCw className="w-6 h-6 animate-spin" />
                   SUBMITTING JOB TO PIPELINE...
+                </>
+              ) : activeJob?.status === "processing" ? (
+                <>
+                  <RefreshCw className="w-6 h-6 animate-spin" />
+                  SYNTHESIZING VIDEO ({activeJob.progress}%)...
                 </>
               ) : (
                 <>
@@ -324,8 +603,8 @@ function StudioContent() {
                 <span className="bg-white px-2 py-0.5 border border-black font-mono text-xs">FFmpeg 720x1280 9:16</span>
               </li>
               <li className="flex items-center justify-between">
-                <span className="font-bold">API Cost:</span>
-                <span className="bg-emerald-500 text-white px-2 py-0.5 border border-black font-black text-xs">$0.00 / Free</span>
+                <span className="font-bold">Turnaround:</span>
+                <span className="bg-emerald-500 text-white px-2 py-0.5 border border-black font-black text-xs">~45 - 75 Seconds</span>
               </li>
             </ul>
           </div>
@@ -347,6 +626,9 @@ function StudioContent() {
           </div>
         </div>
       </div>
+
+      {/* Video Preview Modal */}
+      <VideoModal video={previewVideo} onClose={() => setPreviewVideo(null)} />
     </section>
   );
 }

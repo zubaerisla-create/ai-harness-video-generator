@@ -15,6 +15,7 @@ logger = logging.getLogger("ai_harness.api.jobs")
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
 @router.post("", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=JobResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def create_job(
     request: JobCreateRequest,
     db: AsyncSession = Depends(get_db),
@@ -49,6 +50,7 @@ async def create_job(
     return _format_job_response(job)
 
 @router.get("", response_model=List[JobResponse])
+@router.get("/", response_model=List[JobResponse], include_in_schema=False)
 async def list_jobs(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -147,8 +149,8 @@ def _format_job_response(job) -> JobResponse:
             ))
 
     video_dict = None
-    if "video" in job.__dict__ and job.__dict__["video"]:
-        v = job.__dict__["video"]
+    v = getattr(job, "video", None) or job.__dict__.get("video")
+    if v:
         video_dict = {
             "id": v.id,
             "job_id": v.job_id,

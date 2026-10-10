@@ -114,6 +114,19 @@ export default function QueuePage() {
         </div>
       </div>
 
+      {/* Information Banner */}
+      <div className="mb-6 p-4 bg-[#FFFDF8] border-4 border-black shadow-brutalist flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-bold text-gray-800">
+        <div className="flex items-center gap-2">
+          <Clock className="w-5 h-5 text-lms-primary shrink-0" />
+          <span>
+            <strong className="font-black uppercase text-black">VPS Pipeline Speed:</strong> Each video takes ~45 to 75 seconds to synthesize and render (Ollama LLM scriptwriting → Piper ONNX voice → FFmpeg 720p 9:16). Updates automatically below.
+          </span>
+        </div>
+        <span className="font-mono bg-black text-white px-2.5 py-1 text-[11px] font-black uppercase whitespace-nowrap self-start sm:self-auto">
+          MAX CONCURRENT: 1 WORKER
+        </span>
+      </div>
+
       {/* Table */}
       <div className="bg-white border-4 border-black shadow-brutalist-xl overflow-x-auto">
         <table className="w-full text-left border-collapse">
