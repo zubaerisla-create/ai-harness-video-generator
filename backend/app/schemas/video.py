@@ -17,10 +17,12 @@ class JobCreateRequest(BaseModel):
     @field_validator("prompt", mode="before")
     @classmethod
     def validate_prompt(cls, v: Any) -> str:
-        if not v:
+        if v is None:
             return "The Future of Artificial Intelligence and Emerging Technology"
         s = str(v).strip()
-        return s if len(s) > 0 else "The Future of Artificial Intelligence and Emerging Technology"
+        if len(s) < 3:
+            raise ValueError("Prompt must be at least 3 characters long")
+        return s
 
     @field_validator("requested_duration", mode="before")
     @classmethod
@@ -29,9 +31,11 @@ class JobCreateRequest(BaseModel):
             return 45
         try:
             val = int(float(v))
-            return max(15, min(300, val))
         except Exception:
-            return 45
+            raise ValueError("Duration must be a valid integer")
+        if val < 15 or val > 300:
+            raise ValueError("Duration must be between 15 and 300 seconds")
+        return val
 
     @field_validator("enable_narration", "enable_subtitles", "enable_bgm", mode="before")
     @classmethod
@@ -49,9 +53,7 @@ class JobCreateRequest(BaseModel):
     def validate_style(cls, v: Any) -> str:
         if not v or not isinstance(v, str):
             return "business_strategy"
-        s = v.strip().lower()
-        valid = {"business_strategy", "ai_news", "sci_fi_concept", "emerging_tech", "future_predictions"}
-        return s if s in valid else "business_strategy"
+        return v.strip().lower()
 
     @field_validator("requested_resolution", mode="before")
     @classmethod

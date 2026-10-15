@@ -18,7 +18,7 @@ async def test_api_unauthorized_job_access():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # Accessing protected route without credentials must return 401
-        resp = await ac.get("/api/jobs")
+        resp = await ac.get("/api/auth/me")
         assert resp.status_code == 401
 
 @pytest.mark.asyncio

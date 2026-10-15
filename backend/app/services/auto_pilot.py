@@ -159,7 +159,7 @@ class AutoPilotService:
                 return
 
             # Pick next unique topic from the rotating 5 pillars
-            style, prompt = self._pick_next_unique_topic()
+            style, prompt = await self._pick_next_unique_topic()
 
             logger.info(f"[Auto-Pilot] Scheduling Video {completed_today + 1}/{self.daily_target} [{style}]: '{prompt}'")
 
@@ -199,19 +199,30 @@ class AutoPilotService:
         except Exception as e:
             logger.warning(f"Failed to record topic history: {e}")
 
-    def _pick_next_unique_topic(self) -> Tuple[str, str]:
+    async def _pick_next_unique_topic(self) -> Tuple[str, str]:
         history = set(self._load_history())
 
         # Select pillar in cyclic order to guarantee diversity
         pillar = self._pillars[self._pillar_index % len(self._pillars)]
         self._pillar_index += 1
 
+        # 1. Fetch live real-time breaking news for this category from OnlineResearcher
+        try:
+            from backend.app.services.online_researcher import online_researcher
+            trending = await online_researcher.get_trending_topics(pillar, limit=6)
+            for title, desc, meta in trending:
+                clean_title = title.strip()
+                if clean_title not in history and len(clean_title) > 12:
+                    self._save_history(clean_title)
+                    logger.info(f"[Auto-Pilot] Selected live trending news topic: '{clean_title}' ({meta.get('publisher')})")
+                    return pillar, f"{clean_title}: {desc}"
+        except Exception as e:
+            logger.warning(f"[Auto-Pilot] Live news discovery fallback: {e}")
+
+        # 2. Curated topic fallback if offline or no new news found
         topic_candidates = PILLAR_TOPICS.get(pillar, PILLAR_TOPICS["business_strategy"])
-        
-        # Filter out previously used topics
         unused = [(t, d) for t, d in topic_candidates if t not in history]
         if not unused:
-            # If all used, pick the least recently used
             unused = topic_candidates
 
         title, description = random.choice(unused)
@@ -221,3 +232,4 @@ class AutoPilotService:
         return pillar, full_prompt
 
 auto_pilot = AutoPilotService()
+
