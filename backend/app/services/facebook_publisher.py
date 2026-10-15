@@ -279,6 +279,51 @@ class FacebookPublisherService:
             logger.warning(f"Exception checking recent Facebook videos: {e}")
             return True, None, None
 
+    async def get_recent_live_publications_count_on_facebook(self, lookback_hours: int = 24) -> int:
+        """
+        Directly queries Facebook Graph API to count how many videos were published
+        to the Page within the last `lookback_hours` (default 24h).
+        Zero-trust verification directly against Meta's servers.
+        """
+        if settings.DRY_RUN or not self.access_token or not self.page_id:
+            return 0
+
+        url = f"{self.video_url}/{self.page_id}/videos"
+        params = {
+            "fields": "id,created_time,published",
+            "limit": 25
+        }
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.get(url, params=params, headers=headers)
+                if res.status_code != 200:
+                    return 0
+
+                videos = res.json().get("data", [])
+                now_utc = datetime.now(timezone.utc)
+                count = 0
+                for v in videos:
+                    c_time_str = v.get("created_time")
+                    if not c_time_str:
+                        continue
+                    try:
+                        c_dt = datetime.fromisoformat(c_time_str.replace("Z", "+00:00"))
+                        if c_dt.tzinfo is None:
+                            c_dt = c_dt.replace(tzinfo=timezone.utc)
+                        else:
+                            c_dt = c_dt.astimezone(timezone.utc)
+                        diff_h = (now_utc - c_dt).total_seconds() / 3600.0
+                        if 0 <= diff_h <= lookback_hours:
+                            count += 1
+                    except Exception:
+                        continue
+                return count
+        except Exception as e:
+            logger.warning(f"Error querying live publication count from Meta: {e}")
+            return 0
+
     async def reconcile_video_with_facebook(
         self,
         title: str,

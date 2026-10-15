@@ -103,8 +103,9 @@ class Settings(BaseSettings):
     ADVANCE_RENDER_MINUTES: int = 60  # Render video up to 60m ahead of scheduled slot
 
     # Operational Rollout / Pilot Observation Mode
-    PILOT_ONE_POST_ROLLOUT: bool = True  # Permits at most 1 live post during initial 24h observation; subsequent slots run in dry-run mode
+    PILOT_ONE_POST_ROLLOUT: bool = True  # Permits at most 1 live post during rolling observation window; subsequent slots run in dry-run mode
     PILOT_MAX_LIVE_POSTS: int = 1
+    PILOT_ROLLING_WINDOW_HOURS: int = 24  # Persistent rolling lookback window in hours
 
     # Retention
     AUTO_CLEANUP_TEMP_FILES: bool = True

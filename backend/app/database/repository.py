@@ -1,6 +1,6 @@
-from typing import Optional, List, Dict, Any
-from datetime import datetime
-from sqlalchemy import select, update, delete, desc, func
+from typing import Optional, List, Dict, Any, Tuple
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import select, update, delete, desc, func, not_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -278,20 +278,47 @@ class DailyPublicationRepository:
         vids = json.loads(record.video_ids or "[]")
         return len([v for v in vids if not str(v).startswith("dry_run_")])
 
+    async def get_rolling_24h_live_published_count(self, lookback_hours: int = 24) -> int:
+        """
+        Counts confirmed live (non-dry-run) publications across a persistent rolling lookback window.
+        Uses persistent VideoJob.published_at timestamps.
+        """
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
+        stmt = (
+            select(func.count(VideoJob.id))
+            .where(
+                VideoJob.status == "published",
+                VideoJob.facebook_video_id.is_not(None),
+                not_(VideoJob.facebook_video_id.like("dry_run_%")),
+                VideoJob.published_at >= cutoff
+            )
+        )
+        res = await self.session.execute(stmt)
+        return res.scalar_one() or 0
+
     async def reserve_publication_slot(
         self,
         local_date: str,
         max_quota: int,
         job_id: str,
-        timezone: str = "Asia/Dhaka"
-    ) -> bool:
+        timezone_name: str = "Asia/Dhaka",
+        pilot_mode: bool = False,
+        pilot_max_live_posts: int = 1,
+        pilot_lookback_hours: int = 24,
+        is_dry_run_configured: bool = True
+    ) -> Tuple[bool, bool]:
         """
         Atomically reserves a publication quota slot across concurrent jobs and processes.
-        Calculates confirmed published videos + active in-flight uploading jobs.
-        If under limit, transitions the job to 'uploading' in the same transaction.
-        Returns True if reservation succeeded, False otherwise.
+        Calculates:
+        1. Confirmed published videos today + active in-flight uploading jobs for daily quota.
+        2. Rolling 24-hour confirmed live publications + active in-flight live uploads.
+
+        Returns:
+            Tuple[can_publish, force_dry_run]:
+            - can_publish (bool): True if quota was reserved, False if blocked by quota.
+            - force_dry_run (bool): True if live pilot limit reached and slot should execute in dry-run mode.
         """
-        record = await self.get_or_create_daily(local_date, timezone)
+        record = await self.get_or_create_daily(local_date, timezone_name)
 
         # Count other jobs currently in 'uploading' state across the system
         active_uploads_stmt = select(func.count(VideoJob.id)).where(
@@ -303,14 +330,32 @@ class DailyPublicationRepository:
 
         # Strict Atomic Invariant: confirmed publications + active uploading slots must be < max_quota
         if (record.published_count + active_uploads) >= max_quota:
-            return False
+            return False, False
+
+        # Atomic Rolling 24-Hour Pilot Live Limit Check
+        force_dry_run = False
+        if not is_dry_run_configured and pilot_mode:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=pilot_lookback_hours)
+            stmt_live = select(func.count(VideoJob.id)).where(
+                VideoJob.status == "published",
+                VideoJob.facebook_video_id.is_not(None),
+                not_(VideoJob.facebook_video_id.like("dry_run_%")),
+                VideoJob.published_at >= cutoff
+            )
+            res_live = await self.session.execute(stmt_live)
+            live_rolling_count = res_live.scalar_one() or 0
+
+            # If confirmed 24h live posts + active in-flight uploads >= pilot limit,
+            # this worker cannot upload live. It is atomically forced into dry-run mode.
+            if (live_rolling_count + active_uploads) >= pilot_max_live_posts:
+                force_dry_run = True
 
         # Atomically transition THIS job to 'uploading' to hold the reservation
         stmt = (
             update(VideoJob)
             .where(
                 VideoJob.id == job_id,
-                VideoJob.status.in_(["ready", "completed", "retry_pending", "pending"])
+                VideoJob.status.in_(["ready", "completed", "retry_pending", "pending", "processing"])
             )
             .values(
                 status="uploading",
@@ -320,10 +365,10 @@ class DailyPublicationRepository:
         res = await self.session.execute(stmt)
         if res.rowcount != 1:
             # Job not in ready/retryable state or already seized by concurrent worker
-            return False
+            return False, False
 
         await self.session.commit()
-        return True
+        return True, force_dry_run
 
     async def is_slot_fulfilled(self, local_date: str, slot: str) -> bool:
         record = await self.get_or_create_daily(local_date)

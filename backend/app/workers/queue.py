@@ -19,7 +19,7 @@ from backend.app.services.subtitle_generator import SubtitleGenerator
 from backend.app.services.music_library import MusicLibraryService
 from backend.app.services.video_renderer import VideoRenderer
 from backend.app.services.quality_validator import QualityValidator
-from backend.app.services.facebook_publisher import facebook_publisher
+from backend.app.services.facebook_publisher import facebook_publisher, PublishResult
 
 logger = logging.getLogger("ai_harness.worker")
 
@@ -367,31 +367,43 @@ class VideoPipelineOrchestrator:
             local_now = datetime.now(tz)
             local_date_str = local_now.strftime("%Y-%m-%d")
 
-            # 1. Operational Pilot Rollout Mode Check:
-            # If in pilot rollout mode and 1 live post has already been published today,
-            # fulfill subsequent slots in dry-run mode during the 24-hour observation period.
-            dry_run_override = None
-            if not settings.DRY_RUN and settings.PILOT_ONE_POST_ROLLOUT:
-                live_today = await daily_repo.get_live_published_count(local_date_str)
-                if live_today >= settings.PILOT_MAX_LIVE_POSTS:
-                    logger.info(
-                        f"[PILOT_ROLLOUT] 24h observation limit reached ({live_today}/{settings.PILOT_MAX_LIVE_POSTS} live posts). "
-                        f"Executing slot '{slot or 'N/A'}' for Job {job_id} in verified dry-run simulation mode."
-                    )
-                    dry_run_override = True
-
-            # 2. Atomic Quota Reservation across concurrent jobs and processes
-            reserved = await daily_repo.reserve_publication_slot(
+            # 1. Atomic Quota & Rolling 24-Hour Pilot Reservation
+            can_publish, force_dry_run = await daily_repo.reserve_publication_slot(
                 local_date=local_date_str,
                 max_quota=settings.MAX_DAILY_PUBLISHED_VIDEOS,
                 job_id=job_id,
-                timezone=settings.TIMEZONE
+                timezone_name=settings.TIMEZONE,
+                pilot_mode=settings.PILOT_ONE_POST_ROLLOUT,
+                pilot_max_live_posts=settings.PILOT_MAX_LIVE_POSTS,
+                pilot_lookback_hours=settings.PILOT_ROLLING_WINDOW_HOURS,
+                is_dry_run_configured=settings.DRY_RUN
             )
-            if not reserved:
+            if not can_publish:
                 today_count = await daily_repo.get_today_count(local_date_str)
-                err = f"Daily publication quota ({today_count}/{settings.MAX_DAILY_PUBLISHED_VIDEOS}) or concurrent upload slot reservation blocked for {local_date_str}."
+                err = f"Daily publication quota ({today_count}/{settings.MAX_DAILY_PUBLISHED_VIDEOS}) reached for {local_date_str}."
                 logger.warning(f"Aborting publication for Job {job_id}: {err}")
                 return False
+
+            dry_run_override = None
+            if force_dry_run:
+                logger.info(
+                    f"[PILOT_ROLLOUT] Persistent rolling {settings.PILOT_ROLLING_WINDOW_HOURS}h live limit reached. "
+                    f"Executing slot '{slot or 'N/A'}' for Job {job_id} in verified dry-run simulation mode."
+                )
+                dry_run_override = True
+
+            # 2. Zero-Trust Direct Meta Graph API Rolling Verification
+            # If about to publish LIVE, verify directly with Meta's servers that no live post was published in rolling 24h
+            if dry_run_override is not True and not settings.DRY_RUN and settings.PILOT_ONE_POST_ROLLOUT:
+                meta_live_count = await facebook_publisher.get_recent_live_publications_count_on_facebook(
+                    lookback_hours=settings.PILOT_ROLLING_WINDOW_HOURS
+                )
+                if meta_live_count >= settings.PILOT_MAX_LIVE_POSTS:
+                    logger.info(
+                        f"[PILOT_ROLLOUT] Meta Graph API confirms {meta_live_count} live post(s) within rolling {settings.PILOT_ROLLING_WINDOW_HOURS}h. "
+                        f"Executing slot '{slot or 'N/A'}' for Job {job_id} in verified dry-run mode."
+                    )
+                    dry_run_override = True
 
             # 3. Call Facebook Publisher
             hashtags = job.hashtags or "#DevlanceAi #AI #EmergingTech #Business #Innovation #Technology #Shorts"
@@ -403,6 +415,27 @@ class VideoPipelineOrchestrator:
                 job_id=job_id,
                 dry_run_override=dry_run_override
             )
+
+            # 4. Immediate Uncertain Timeout & Server Error Meta Reconciliation
+            if not result.success and (result.retryable or "timed out" in (result.error_message or "").lower()):
+                logger.info(
+                    f"Uncertain upload timeout or retryable error for Job {job_id}: '{result.error_message}'. "
+                    f"Performing immediate Meta reconciliation before releasing reservation or retrying..."
+                )
+                reconciled = await facebook_publisher.reconcile_video_with_facebook(
+                    title=job.video.title,
+                    caption=caption,
+                    max_lookback_hours=settings.PILOT_ROLLING_WINDOW_HOURS
+                )
+                if reconciled:
+                    v_id = reconciled.get("id")
+                    logger.info(f"Immediate Meta reconciliation SUCCEEDED for Job {job_id}: Confirmed on Facebook with ID {v_id}!")
+                    result = PublishResult(
+                        success=True,
+                        video_id=v_id,
+                        post_id=v_id,
+                        status_code=200
+                    )
 
             tz = zoneinfo.ZoneInfo(settings.TIMEZONE)
             local_now = datetime.now(tz)
