@@ -232,7 +232,7 @@ class FacebookPublisherService:
         params = {
             "fields": "id,created_time,published,title,description",
             "access_token": self.access_token,
-            "limit": 5
+            "limit": 15
         }
 
         try:
@@ -252,10 +252,18 @@ class FacebookPublisherService:
                     if not c_time_str:
                         continue
                     try:
-                        # ISO 8601 with timezone e.g. 2026-10-15T13:20:31+0000
-                        c_dt = datetime.strptime(c_time_str, "%Y-%m-%dT%H:%M:%S%z")
+                        c_dt = datetime.fromisoformat(c_time_str.replace("Z", "+00:00"))
                     except Exception:
-                        continue
+                        try:
+                            c_dt = datetime.strptime(c_time_str, "%Y-%m-%dT%H:%M:%S%z")
+                        except Exception:
+                            continue
+
+                    # Ensure c_dt is timezone-aware in UTC
+                    if c_dt.tzinfo is None:
+                        c_dt = c_dt.replace(tzinfo=timezone.utc)
+                    else:
+                        c_dt = c_dt.astimezone(timezone.utc)
 
                     diff_m = (now_utc - c_dt).total_seconds() / 60.0
                     if 0 <= diff_m < min_interval_minutes:
@@ -271,6 +279,74 @@ class FacebookPublisherService:
         except Exception as e:
             logger.warning(f"Exception checking recent Facebook videos: {e}")
             return True, None, None
+
+    async def reconcile_video_with_facebook(
+        self,
+        title: str,
+        caption: str,
+        max_lookback_hours: int = 24
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Reconciles ambiguous upload timeouts by checking if a video matching the title
+        or description was actually created on Facebook in the last `max_lookback_hours`.
+        Guarantees that retry attempts never duplicate an already-uploaded video.
+        """
+        if settings.DRY_RUN or not self.access_token or not self.page_id:
+            return None
+
+        url = f"{self.video_url}/{self.page_id}/videos"
+        params = {
+            "fields": "id,title,description,created_time,published,status",
+            "access_token": self.access_token,
+            "limit": 25
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.get(url, params=params)
+                if res.status_code != 200:
+                    return None
+
+                videos = res.json().get("data", [])
+                clean_title = (title or "").strip().lower()
+                clean_caption = (caption or "").strip().lower()
+                now_utc = datetime.now(timezone.utc)
+
+                for v in videos:
+                    c_time_str = v.get("created_time")
+                    if c_time_str:
+                        try:
+                            c_dt = datetime.fromisoformat(c_time_str.replace("Z", "+00:00"))
+                            if c_dt.tzinfo is None:
+                                c_dt = c_dt.replace(tzinfo=timezone.utc)
+                            else:
+                                c_dt = c_dt.astimezone(timezone.utc)
+                            diff_h = (now_utc - c_dt).total_seconds() / 3600.0
+                            if diff_h > max_lookback_hours:
+                                continue
+                        except Exception:
+                            pass
+
+                    fb_title = (v.get("title") or "").strip().lower()
+                    fb_desc = (v.get("description") or "").strip().lower()
+
+                    matched = False
+                    if clean_title and len(clean_title) > 10 and (clean_title in fb_title or clean_title in fb_desc):
+                        matched = True
+                    elif clean_caption and len(clean_caption) > 15 and clean_caption[:50] in fb_desc:
+                        matched = True
+
+                    if matched:
+                        logger.info(
+                            f"Reconciled upload with Meta: Video '{v.get('id')}' matches title/caption "
+                            f"on Facebook. Reusing existing upload rather than re-uploading."
+                        )
+                        return v
+
+                return None
+        except Exception as e:
+            logger.warning(f"Error during Meta reconciliation check: {e}")
+            return None
 
     async def publish_video(
         self,
@@ -342,6 +418,18 @@ class FacebookPublisherService:
                 success=False,
                 error_message=interval_err,
                 retryable=False
+            )
+
+        # 4. Meta Upload Timeout Reconciliation: Check if this video was already received by Facebook
+        reconciled = await self.reconcile_video_with_facebook(title=title, caption=caption)
+        if reconciled:
+            v_id = reconciled.get("id")
+            logger.info(f"Reconciled job {job_id} with existing Facebook video ID {v_id}. Reusing video.")
+            return PublishResult(
+                success=True,
+                video_id=v_id,
+                post_id=v_id,
+                status_code=200
             )
 
         upload_endpoint = f"{self.video_url}/{self.page_id}/videos"

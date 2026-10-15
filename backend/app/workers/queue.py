@@ -358,6 +358,14 @@ class VideoPipelineOrchestrator:
                 err = f"QA Gate Rejected: {qa_res.error_message}"
                 logger.error(f"Job {job_id} failed pre-upload QA gate: {err}")
                 await job_repo.update_job_status(job_id, status="failed", stage="qa_failed", upload_error=err)
+            # Check atomic daily quota in database before initiating upload
+            tz = zoneinfo.ZoneInfo(settings.TIMEZONE)
+            local_now = datetime.now(tz)
+            local_date_str = local_now.strftime("%Y-%m-%d")
+            today_count = await daily_repo.get_today_count(local_date_str)
+            if today_count >= settings.MAX_DAILY_PUBLISHED_VIDEOS:
+                err = f"Daily publication quota ({today_count}/{settings.MAX_DAILY_PUBLISHED_VIDEOS}) reached for {local_date_str}."
+                logger.warning(f"Aborting publication for Job {job_id}: {err}")
                 return False
 
             # Mark state as uploading before calling API

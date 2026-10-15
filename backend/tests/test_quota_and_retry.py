@@ -148,3 +148,80 @@ async def test_recent_publication_interval_guard():
             can_pub, reason, _ = await publisher.check_recent_publications_on_facebook(min_interval_minutes=120)
             assert can_pub is True
             assert reason is None
+
+@pytest.mark.asyncio
+async def test_reconcile_video_with_facebook():
+    """Verify that ambiguous timeouts reconcile existing uploads matching title/caption rather than duplicating."""
+    publisher = FacebookPublisherService(page_id="1120237794506468", access_token="test_token")
+    
+    mock_videos = {
+        "data": [
+            {
+                "id": "fb_reconciled_999",
+                "title": "Autonomous AI Agents in Business",
+                "description": "How autonomous AI agents are changing corporate strategy in 2026.\n\n#AI",
+                "created_time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+0000"),
+                "published": True
+            }
+        ]
+    }
+    
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = mock_videos
+    
+    with patch("backend.app.config.settings.DRY_RUN", False):
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
+            matched = await publisher.reconcile_video_with_facebook(
+                title="Autonomous AI Agents in Business",
+                caption="How autonomous AI agents are changing corporate strategy"
+            )
+            assert matched is not None
+            assert matched.get("id") == "fb_reconciled_999"
+
+@pytest.mark.asyncio
+async def test_publish_job_blocks_when_daily_quota_full(tmp_path: Path):
+    """Verify that publish_job aborts before attempting upload when daily quota is full."""
+    async with AsyncSessionLocal() as session:
+        job_repo = JobRepository(session)
+        daily_repo = DailyPublicationRepository(session)
+        
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(settings.TIMEZONE)
+        local_date_str = datetime.now(tz).strftime("%Y-%m-%d")
+        
+        # Ensure daily quota is full for today
+        for i in range(1, 6):
+            await daily_repo.record_publication(
+                local_date=local_date_str,
+                slot=f"sim_slot_{i}",
+                video_id=f"sim_vid_{i}",
+                timezone=settings.TIMEZONE
+            )
+            
+        # Create a mock video job
+        job = await job_repo.create_job({"prompt": "Testing atomic quota block"})
+        video_file = tmp_path / "vid_quota.mp4"
+        video_file.write_bytes(b"0" * 20000)
+        
+        from backend.app.database.repository import VideoRepository
+        v_repo = VideoRepository(session)
+        await v_repo.create_video({
+            "job_id": job.id,
+            "title": "Blocked by Quota",
+            "file_path": str(video_file),
+            "duration": 45.0,
+            "width": 720,
+            "height": 1280
+        })
+        
+        orchestrator = VideoPipelineOrchestrator()
+        with patch.object(
+            orchestrator.quality_validator,
+            "validate_for_upload",
+            return_value=MagicMock(is_valid=True)
+        ):
+            # Attempt to publish -> should be blocked by quota before hitting publisher
+            success = await orchestrator.publish_job(job.id)
+            assert success is False
+
