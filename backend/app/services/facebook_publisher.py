@@ -4,6 +4,7 @@ import time
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
+from datetime import datetime, timezone
 import httpx
 from pydantic import BaseModel
 
@@ -212,6 +213,65 @@ class FacebookPublisherService:
         except Exception as e:
             return {"published": False, "error": str(e)}
 
+    async def check_recent_publications_on_facebook(
+        self,
+        min_interval_minutes: int = 120
+    ) -> Tuple[bool, Optional[str], Optional[Dict[str, Any]]]:
+        """
+        Queries Facebook Graph API to check if any video was published to the Page
+        within the last `min_interval_minutes` (default 120m).
+        Guarantees zero-trust duplicate protection across multi-machine / multi-process setups.
+        """
+        if settings.DRY_RUN:
+            return True, None, None
+
+        if not self.access_token or not self.page_id:
+            return True, None, None
+
+        url = f"{self.video_url}/{self.page_id}/videos"
+        params = {
+            "fields": "id,created_time,published,title,description",
+            "access_token": self.access_token,
+            "limit": 5
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.get(url, params=params)
+                if res.status_code != 200:
+                    logger.warning(f"Failed to query recent videos from Facebook: {res.status_code}")
+                    return True, None, None  # Allow upload if query temporarily fails
+
+                videos = res.json().get("data", [])
+                if not videos:
+                    return True, None, None
+
+                now_utc = datetime.now(timezone.utc)
+                for v in videos:
+                    c_time_str = v.get("created_time")
+                    if not c_time_str:
+                        continue
+                    try:
+                        # ISO 8601 with timezone e.g. 2026-10-15T13:20:31+0000
+                        c_dt = datetime.strptime(c_time_str, "%Y-%m-%dT%H:%M:%S%z")
+                    except Exception:
+                        continue
+
+                    diff_m = (now_utc - c_dt).total_seconds() / 60.0
+                    if 0 <= diff_m < min_interval_minutes:
+                        msg = (
+                            f"Enforcing interval guard: Video {v.get('id')} was published to Facebook "
+                            f"{int(diff_m)} minutes ago ({c_time_str}). "
+                            f"Minimum required spacing between posts is {min_interval_minutes} minutes."
+                        )
+                        logger.warning(msg)
+                        return False, msg, v
+
+                return True, None, None
+        except Exception as e:
+            logger.warning(f"Exception checking recent Facebook videos: {e}")
+            return True, None, None
+
     async def publish_video(
         self,
         video_path: Path,
@@ -273,6 +333,15 @@ class FacebookPublisherService:
             return PublishResult(
                 success=False,
                 error_message="Live publishing is currently disabled (FACEBOOK_PUBLISHING_ENABLED=False). Enable it to publish live."
+            )
+
+        # 3. Minimum Publishing Interval Guard (enforces >= 2 hours between live posts directly on Facebook)
+        can_pub, interval_err, _ = await self.check_recent_publications_on_facebook(min_interval_minutes=120)
+        if not can_pub:
+            return PublishResult(
+                success=False,
+                error_message=interval_err,
+                retryable=False
             )
 
         upload_endpoint = f"{self.video_url}/{self.page_id}/videos"

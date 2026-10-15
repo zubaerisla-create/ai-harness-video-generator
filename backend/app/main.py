@@ -35,15 +35,19 @@ async def lifespan(app: FastAPI):
             await user_repo.create_user(settings.ADMIN_USERNAME, hashed)
             logger.info(f"Default admin user '{settings.ADMIN_USERNAME}' initialized.")
 
-    # Start background job worker and 24/7 auto pilot
+    # Start background job worker and optional 24/7 auto pilot
     await worker_service.start()
-    await auto_pilot.start()
-    logger.info("AI Story Video Generation Harness ready with Auto-Pilot enabled.")
+    if settings.AUTOPILOT_ENABLED:
+        await auto_pilot.start()
+        logger.info("AI Story Video Generation Harness ready with Auto-Pilot enabled.")
+    else:
+        logger.info("AI Story Video Generation Harness ready (Auto-Pilot scheduler disabled on this instance).")
     
     yield
     
     logger.info("Shutting down AI Story Harness...")
-    await auto_pilot.stop()
+    if settings.AUTOPILOT_ENABLED:
+        await auto_pilot.stop()
     await worker_service.stop()
 
 app = FastAPI(
