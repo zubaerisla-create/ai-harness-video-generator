@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from pydantic import BaseModel
+from backend.app.config import settings
 
 logger = logging.getLogger("ai_harness.quality_validator")
 
