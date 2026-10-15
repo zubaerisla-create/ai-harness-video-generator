@@ -102,6 +102,10 @@ class Settings(BaseSettings):
     MAX_DAILY_PUBLISHED_VIDEOS: int = 5
     ADVANCE_RENDER_MINUTES: int = 60  # Render video up to 60m ahead of scheduled slot
 
+    # Operational Rollout / Pilot Observation Mode
+    PILOT_ONE_POST_ROLLOUT: bool = True  # Permits at most 1 live post during initial 24h observation; subsequent slots run in dry-run mode
+    PILOT_MAX_LIVE_POSTS: int = 1
+
     # Retention
     AUTO_CLEANUP_TEMP_FILES: bool = True
     RETENTION_DAYS: int = 30  # Auto purge older videos if retention enabled

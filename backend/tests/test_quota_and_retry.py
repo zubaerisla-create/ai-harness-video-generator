@@ -5,7 +5,7 @@ from pathlib import Path
 
 from backend.app.config import settings
 from backend.app.database.session import AsyncSessionLocal
-from backend.app.database.repository import JobRepository, DailyPublicationRepository
+from backend.app.database.repository import JobRepository, DailyPublicationRepository, VideoRepository
 from backend.app.services.facebook_publisher import FacebookPublisherService, PublishResult
 from backend.app.workers.queue import VideoPipelineOrchestrator
 
@@ -209,11 +209,109 @@ async def test_publish_job_blocks_when_daily_quota_full(tmp_path: Path):
         ):
             with patch.object(
                 DailyPublicationRepository,
-                "get_today_count",
+                "reserve_publication_slot",
                 new_callable=AsyncMock,
-                return_value=5
+                return_value=False
             ):
                 # Attempt to publish -> should be blocked by quota before hitting publisher
                 success = await orchestrator.publish_job(job.id)
                 assert success is False
+
+@pytest.mark.asyncio
+async def test_atomic_quota_reservation_concurrency(tmp_path: Path):
+    """Verify that reserve_publication_slot accounts for in-flight uploading jobs atomically."""
+    import uuid
+    async with AsyncSessionLocal() as session:
+        daily_repo = DailyPublicationRepository(session)
+        job_repo = JobRepository(session)
+        test_date = f"2099-07-{uuid.uuid4().hex[:6]}"
+
+        # Create two jobs in ready state
+        job1 = await job_repo.create_job({"prompt": "Job 1"})
+        await job_repo.update_job_status(job1.id, status="ready")
+        
+        job2 = await job_repo.create_job({"prompt": "Job 2"})
+        await job_repo.update_job_status(job2.id, status="ready")
+
+        # Set max_quota to 1
+        # Job 1 reserves the single slot
+        res1 = await daily_repo.reserve_publication_slot(test_date, max_quota=1, job_id=job1.id)
+        assert res1 is True
+        
+        # Verify job1 is now 'uploading'
+        refreshed_job1 = await job_repo.get_job_by_id(job1.id)
+        assert refreshed_job1.status == "uploading"
+
+        # Job 2 attempts to reserve while job1 is in-flight -> MUST fail atomically
+        res2 = await daily_repo.reserve_publication_slot(test_date, max_quota=1, job_id=job2.id)
+        assert res2 is False
+
+        # If job 1 fails and status becomes 'failed', reservation is released
+        await job_repo.update_job_status(job1.id, status="failed")
+        res2_retry = await daily_repo.reserve_publication_slot(test_date, max_quota=1, job_id=job2.id)
+        assert res2_retry is True
+        await job_repo.update_job_status(job2.id, status="failed")
+
+@pytest.mark.asyncio
+async def test_pilot_rollout_mode_dry_run_fallback(tmp_path: Path):
+    """Verify that under PILOT_ONE_POST_ROLLOUT, once 1 live post exists, subsequent slots run in dry-run mode."""
+    import uuid
+    async with AsyncSessionLocal() as session:
+        job_repo = JobRepository(session)
+        v_repo = VideoRepository(session)
+        daily_repo = DailyPublicationRepository(session)
+
+        job = await job_repo.create_job({"prompt": "Pilot rollout test"})
+        await job_repo.update_job_status(job.id, status="ready")
+        video_file = tmp_path / "vid_pilot.mp4"
+        video_file.write_bytes(b"0" * 20000)
+
+        await v_repo.create_video({
+            "job_id": job.id,
+            "title": "Pilot Rollout Video",
+            "file_path": str(video_file),
+            "duration": 45.0,
+            "width": 720,
+            "height": 1280
+        })
+
+        orchestrator = VideoPipelineOrchestrator()
+        with patch("backend.app.config.settings.DRY_RUN", False), \
+             patch("backend.app.config.settings.PILOT_ONE_POST_ROLLOUT", True), \
+             patch.object(orchestrator.quality_validator, "validate_for_upload", return_value=MagicMock(is_valid=True)), \
+             patch.object(DailyPublicationRepository, "get_live_published_count", new_callable=AsyncMock, return_value=1), \
+             patch.object(DailyPublicationRepository, "reserve_publication_slot", new_callable=AsyncMock, return_value=True), \
+             patch.object(DailyPublicationRepository, "record_publication", new_callable=AsyncMock):
+            with patch("backend.app.services.facebook_publisher.facebook_publisher.publish_video", new_callable=AsyncMock) as mock_pub:
+                mock_pub.return_value = MagicMock(success=True, video_id="dry_run_sim_123", post_id="dry_run_post_123")
+                success = await orchestrator.publish_job(job.id, slot="12:00")
+                assert success is True
+                # Assert that dry_run_override was passed as True!
+                mock_pub.assert_called_once()
+                _, kwargs = mock_pub.call_args
+                assert kwargs.get("dry_run_override") is True
+
+@pytest.mark.asyncio
+async def test_emergency_kill_switch_api():
+    """Verify that calling /api/facebook/emergency-kill-switch immediately halts live publishing."""
+    from httpx import AsyncClient, ASGITransport
+    from backend.app.main import app
+    from backend.app.config import settings
+
+    settings.FACEBOOK_PUBLISHING_ENABLED = True
+    settings.DRY_RUN = False
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.post("/api/facebook/emergency-kill-switch")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "killed"
+        assert data["facebook_publishing_enabled"] is False
+        assert data["dry_run"] is True
+
+        # Confirm global settings were immediately modified
+        assert settings.FACEBOOK_PUBLISHING_ENABLED is False
+        assert settings.DRY_RUN is True
+
 

@@ -363,33 +363,45 @@ class VideoPipelineOrchestrator:
                 await job_repo.update_job_status(job_id, status="failed", stage="qa_failed", upload_error=err)
                 return False
 
-            # Check atomic daily quota in database before initiating upload
             tz = zoneinfo.ZoneInfo(settings.TIMEZONE)
             local_now = datetime.now(tz)
             local_date_str = local_now.strftime("%Y-%m-%d")
-            today_count = await daily_repo.get_today_count(local_date_str)
-            if today_count >= settings.MAX_DAILY_PUBLISHED_VIDEOS:
-                err = f"Daily publication quota ({today_count}/{settings.MAX_DAILY_PUBLISHED_VIDEOS}) reached for {local_date_str}."
+
+            # 1. Operational Pilot Rollout Mode Check:
+            # If in pilot rollout mode and 1 live post has already been published today,
+            # fulfill subsequent slots in dry-run mode during the 24-hour observation period.
+            dry_run_override = None
+            if not settings.DRY_RUN and settings.PILOT_ONE_POST_ROLLOUT:
+                live_today = await daily_repo.get_live_published_count(local_date_str)
+                if live_today >= settings.PILOT_MAX_LIVE_POSTS:
+                    logger.info(
+                        f"[PILOT_ROLLOUT] 24h observation limit reached ({live_today}/{settings.PILOT_MAX_LIVE_POSTS} live posts). "
+                        f"Executing slot '{slot or 'N/A'}' for Job {job_id} in verified dry-run simulation mode."
+                    )
+                    dry_run_override = True
+
+            # 2. Atomic Quota Reservation across concurrent jobs and processes
+            reserved = await daily_repo.reserve_publication_slot(
+                local_date=local_date_str,
+                max_quota=settings.MAX_DAILY_PUBLISHED_VIDEOS,
+                job_id=job_id,
+                timezone=settings.TIMEZONE
+            )
+            if not reserved:
+                today_count = await daily_repo.get_today_count(local_date_str)
+                err = f"Daily publication quota ({today_count}/{settings.MAX_DAILY_PUBLISHED_VIDEOS}) or concurrent upload slot reservation blocked for {local_date_str}."
                 logger.warning(f"Aborting publication for Job {job_id}: {err}")
                 return False
 
-            # Mark state as uploading before calling API
-            attempts = (job.upload_attempts or 0) + 1
-            await job_repo.update_job_status(
-                job_id,
-                status="uploading",
-                stage="uploading_to_facebook",
-                upload_attempts=attempts
-            )
-
-            # Call Facebook Publisher
+            # 3. Call Facebook Publisher
             hashtags = job.hashtags or "#DevlanceAi #AI #EmergingTech #Business #Innovation #Technology #Shorts"
             result = await facebook_publisher.publish_video(
                 video_path=video_path,
                 title=job.video.title,
                 caption=caption,
                 hashtags=hashtags,
-                job_id=job_id
+                job_id=job_id,
+                dry_run_override=dry_run_override
             )
 
             tz = zoneinfo.ZoneInfo(settings.TIMEZONE)
@@ -417,12 +429,14 @@ class VideoPipelineOrchestrator:
                 return True
             else:
                 logger.warning(f"Failed to publish Job {job_id} to Facebook: {result.error_message}")
+                attempts = (job.upload_attempts or 0) + 1
                 new_status = "retry_pending" if (result.retryable and attempts < 2) else "failed"
                 await job_repo.update_job_status(
                     job_id,
                     status=new_status,
                     stage="upload_error",
-                    upload_error=result.error_message
+                    upload_error=result.error_message,
+                    upload_attempts=attempts
                 )
                 return False
 

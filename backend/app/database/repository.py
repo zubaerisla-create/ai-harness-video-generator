@@ -272,8 +272,62 @@ class DailyPublicationRepository:
         record = await self.get_or_create_daily(local_date)
         return record.published_count
 
+    async def get_live_published_count(self, local_date: str) -> int:
+        """Counts how many live (non-dry-run) videos were published to Facebook on this date."""
+        record = await self.get_or_create_daily(local_date)
+        vids = json.loads(record.video_ids or "[]")
+        return len([v for v in vids if not str(v).startswith("dry_run_")])
+
+    async def reserve_publication_slot(
+        self,
+        local_date: str,
+        max_quota: int,
+        job_id: str,
+        timezone: str = "Asia/Dhaka"
+    ) -> bool:
+        """
+        Atomically reserves a publication quota slot across concurrent jobs and processes.
+        Calculates confirmed published videos + active in-flight uploading jobs.
+        If under limit, transitions the job to 'uploading' in the same transaction.
+        Returns True if reservation succeeded, False otherwise.
+        """
+        record = await self.get_or_create_daily(local_date, timezone)
+
+        # Count other jobs currently in 'uploading' state across the system
+        active_uploads_stmt = select(func.count(VideoJob.id)).where(
+            VideoJob.status == "uploading",
+            VideoJob.id != job_id
+        )
+        active_uploads_res = await self.session.execute(active_uploads_stmt)
+        active_uploads = active_uploads_res.scalar_one() or 0
+
+        # Strict Atomic Invariant: confirmed publications + active uploading slots must be < max_quota
+        if (record.published_count + active_uploads) >= max_quota:
+            return False
+
+        # Atomically transition THIS job to 'uploading' to hold the reservation
+        stmt = (
+            update(VideoJob)
+            .where(
+                VideoJob.id == job_id,
+                VideoJob.status.in_(["ready", "completed", "retry_pending", "pending"])
+            )
+            .values(
+                status="uploading",
+                stage="uploading_to_facebook"
+            )
+        )
+        res = await self.session.execute(stmt)
+        if res.rowcount != 1:
+            # Job not in ready/retryable state or already seized by concurrent worker
+            return False
+
+        await self.session.commit()
+        return True
+
     async def is_slot_fulfilled(self, local_date: str, slot: str) -> bool:
         record = await self.get_or_create_daily(local_date)
         slots = json.loads(record.slots_fulfilled or "[]")
         return slot in slots
+
 

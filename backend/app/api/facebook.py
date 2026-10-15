@@ -33,6 +33,8 @@ async def get_facebook_status():
         "token_masked": page_info.get("token_masked"),
         "publishing_enabled": settings.FACEBOOK_PUBLISHING_ENABLED,
         "dry_run": settings.DRY_RUN,
+        "pilot_mode": settings.PILOT_ONE_POST_ROLLOUT,
+        "pilot_max_live_posts": settings.PILOT_MAX_LIVE_POSTS,
         "timezone": scheduler_status.get("timezone"),
         "local_time": scheduler_status.get("local_time"),
         "local_date": scheduler_status.get("local_date"),
@@ -137,3 +139,34 @@ async def toggle_dry_run(payload: Dict[str, Any], user=Depends(get_optional_user
     settings.DRY_RUN = dry_run
     logger.info(f"DRY_RUN mode updated to: {dry_run}")
     return {"dry_run": settings.DRY_RUN, "message": f"Dry-run mode is now {'enabled' if dry_run else 'disabled'}"}
+
+@router.post("/emergency-kill-switch")
+async def emergency_kill_switch(user=Depends(get_optional_user)):
+    """
+    Emergency kill switch: Immediately forces DRY_RUN=True and FACEBOOK_PUBLISHING_ENABLED=False
+    in memory. Instantly halts all live uploads (scheduled and manual) with zero server restart.
+    """
+    settings.FACEBOOK_PUBLISHING_ENABLED = False
+    settings.DRY_RUN = True
+    logger.critical("EMERGENCY KILL SWITCH ENGAGED: Live Facebook publishing immediately halted.")
+    return {
+        "status": "killed",
+        "facebook_publishing_enabled": False,
+        "dry_run": True,
+        "message": "Emergency kill switch engaged. All live Facebook publications are immediately blocked."
+    }
+
+@router.post("/toggle-publishing")
+async def toggle_publishing(payload: Dict[str, Any], user=Depends(get_optional_user)):
+    """
+    Toggles live Facebook publishing on or off in memory.
+    """
+    enabled = bool(payload.get("enabled", False))
+    settings.FACEBOOK_PUBLISHING_ENABLED = enabled
+    logger.info(f"FACEBOOK_PUBLISHING_ENABLED updated to: {enabled}")
+    return {
+        "facebook_publishing_enabled": settings.FACEBOOK_PUBLISHING_ENABLED,
+        "dry_run": settings.DRY_RUN,
+        "message": f"Facebook live publishing is now {'enabled' if enabled else 'disabled'}"
+    }
+

@@ -353,7 +353,8 @@ class FacebookPublisherService:
         title: str,
         caption: str,
         hashtags: Optional[str] = None,
-        job_id: Optional[str] = None
+        job_id: Optional[str] = None,
+        dry_run_override: Optional[bool] = None
     ) -> PublishResult:
         """
         Publishes a rendered MP4 video to the configured Facebook Page.
@@ -380,8 +381,9 @@ class FacebookPublisherService:
             if clean_tags and clean_tags not in clean_desc:
                 clean_desc = f"{clean_desc}\n\n{clean_tags}"
 
-        # 1. DRY_RUN Guard: Never publish a real video in dry-run mode
-        if settings.DRY_RUN:
+        # 1. DRY_RUN Guard: Never publish a real video in dry-run mode (or when dry_run_override is True)
+        is_dry = settings.DRY_RUN if dry_run_override is None else (settings.DRY_RUN or dry_run_override)
+        if is_dry:
             simulated_id = f"dry_run_{int(time.time())}"
             logger.info(
                 f"[DRY_RUN] Simulated publication for Job {job_id or 'N/A'}: "
