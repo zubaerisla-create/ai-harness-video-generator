@@ -16,7 +16,7 @@ outputs/*.wav
 outputs/*.srt
 outputs/*.ass
 outputs/tmp/
-backend/data/*.db
+backend/data/*.db*
 backend/data/*.json
 backend/data/autopilot_topic_history.json
 

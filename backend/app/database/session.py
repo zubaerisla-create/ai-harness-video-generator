@@ -9,12 +9,43 @@ engine = create_async_engine(
     connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
 )
 
-AsyncSessionLocal = async_sessionmaker(
+_sessionmaker = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autoflush=False
 )
+
+class _AsyncSessionMakerProxy:
+    """Proxy object that delegates to _sessionmaker, enabling dynamic engine rebinding."""
+    def __call__(self, *args, **kwargs) -> AsyncSession:
+        return _sessionmaker(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(_sessionmaker, name)
+
+AsyncSessionLocal = _AsyncSessionMakerProxy()
+
+def set_database_url(new_url: str):
+    """
+    Dynamically rebinds engine and sessionmaker to a new database URL.
+    Used by the test suite to achieve full test database isolation.
+    """
+    global engine, _sessionmaker
+    settings.DATABASE_URL = new_url
+    engine = create_async_engine(
+        new_url,
+        echo=settings.DEBUG,
+        future=True,
+        connect_args={"check_same_thread": False} if "sqlite" in new_url else {}
+    )
+    _sessionmaker = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False
+    )
+    return engine
 
 def _run_migrations(connection):
     """Ensure newly added columns exist in SQLite database without requiring external tools."""
