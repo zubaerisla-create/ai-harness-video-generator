@@ -17,11 +17,11 @@ def test_mask_token():
     assert mask_token(None) == "<EMPTY_TOKEN>"
     assert mask_token("") == "<EMPTY_TOKEN>"
     assert mask_token("short") == "***"
-    token = "EAArHHOkQ118BStmDmGYZCeXdJFFRLdKEAxUHnn8jVESqfgM948oznrf0yCZBrtZBVk0je66"
+    token = "EAArHMOCKTOKEN_FOR_UNIT_TESTING_PURPOSES_ONLY_REPLACED_je66"
     masked = mask_token(token)
     assert masked.startswith("EAArH...")
     assert masked.endswith("je66")
-    assert "BStmDmGYZ" not in masked
+    assert "MOCKTOKEN" not in masked
 
 @pytest.mark.asyncio
 async def test_facebook_publisher_dry_run(tmp_path: Path):
