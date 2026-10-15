@@ -98,22 +98,40 @@ class FacebookPublisherService:
 
                 me_data = me_res.json()
                 token_owner_id = str(me_data.get("id"))
+                effective_token = self.access_token
                 is_direct_page_token = (token_owner_id == self.page_id)
 
                 if not is_direct_page_token:
-                    logger.warning(
-                        f"Configured token belongs to user/entity ID {token_owner_id} ({me_data.get('name')}), "
-                        f"not target Page ID {self.page_id}."
+                    # Attempt to resolve Page access token from User token via /me/accounts
+                    accounts_res = await client.get(
+                        f"{self.graph_url}/me/accounts",
+                        params={"access_token": self.access_token}
                     )
-                    return {
-                        "valid": False,
-                        "is_page_token": False,
-                        "error": (
-                            f"The configured token belongs to entity '{me_data.get('name')}' (ID: {token_owner_id}), "
-                            f"not target Page ID {self.page_id}. Please use the Page access token for Devlance Ai."
-                        ),
-                        "token_masked": mask_token(self.access_token)
-                    }
+                    resolved_page_token = None
+                    if accounts_res.status_code == 200:
+                        for page in accounts_res.json().get("data", []):
+                            if str(page.get("id")) == str(self.page_id) and page.get("access_token"):
+                                resolved_page_token = page.get("access_token")
+                                break
+
+                    if resolved_page_token:
+                        logger.info(f"Automatically resolved Page access token for Page {self.page_id} via /me/accounts")
+                        self._access_token = resolved_page_token
+                        effective_token = resolved_page_token
+                    else:
+                        logger.warning(
+                            f"Configured token belongs to user/entity ID {token_owner_id} ({me_data.get('name')}), "
+                            f"and Page ID {self.page_id} was not accessible via /me/accounts."
+                        )
+                        return {
+                            "valid": False,
+                            "is_page_token": False,
+                            "error": (
+                                f"The configured token belongs to entity '{me_data.get('name')}' (ID: {token_owner_id}), "
+                                f"not target Page ID {self.page_id}. Please use the Page access token for Devlance Ai."
+                            ),
+                            "token_masked": mask_token(self.access_token)
+                        }
 
                 # 2. Query page node details
                 page_url = f"{self.graph_url}/{self.page_id}"
@@ -121,7 +139,7 @@ class FacebookPublisherService:
                     page_url,
                     params={
                         "fields": "id,name,category,link,is_published",
-                        "access_token": self.access_token
+                        "access_token": effective_token
                     }
                 )
                 if page_res.status_code != 200:
@@ -129,7 +147,7 @@ class FacebookPublisherService:
                     return {
                         "valid": False,
                         "error": f"Page query failed: {err_json.get('message', page_res.text)}",
-                        "token_masked": mask_token(self.access_token)
+                        "token_masked": mask_token(effective_token)
                     }
 
                 page_data = page_res.json()
@@ -139,7 +157,7 @@ class FacebookPublisherService:
                 try:
                     v_res = await client.get(
                         f"{self.video_url}/{self.page_id}/videos",
-                        params={"access_token": self.access_token, "limit": 1}
+                        params={"access_token": effective_token, "limit": 1}
                     )
                     video_endpoint_ok = (v_res.status_code == 200)
                 except Exception:
@@ -156,7 +174,7 @@ class FacebookPublisherService:
                     "link": page_data.get("link"),
                     "is_published": page_data.get("is_published", True),
                     "video_api_accessible": video_endpoint_ok,
-                    "token_masked": mask_token(self.access_token)
+                    "token_masked": mask_token(effective_token)
                 }
 
         except Exception as e:
