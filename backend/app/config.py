@@ -9,6 +9,11 @@ DATA_DIR = BASE_DIR / "backend" / "data"
 MODELS_DIR = BASE_DIR / "models"
 AUDIO_ASSETS_DIR = BASE_DIR / "backend" / "assets" / "music"
 
+# Ensure .venv/bin is in PATH for static ffmpeg/ffprobe binaries
+venv_bin = str(BASE_DIR / ".venv" / "bin")
+if venv_bin not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = f"{venv_bin}:{os.environ.get('PATH', '')}"
+
 class Settings(BaseSettings):
     # Server settings
     HOST: str = "0.0.0.0"
@@ -87,12 +92,12 @@ class Settings(BaseSettings):
     META_PAGE_ACCESS_TOKEN: str = ""
     META_APP_ID: str = "3033676750313311"
     META_APP_SECRET: str = ""
-    META_GRAPH_API_VERSION: str = "v21.0"
+    META_GRAPH_API_VERSION: str = "v26.0"
 
     # Autonomous Scheduling & Facebook Publishing Agent
     TIMEZONE: str = "Asia/Dhaka"
-    FACEBOOK_PUBLISHING_ENABLED: bool = True
-    DRY_RUN: bool = False
+    FACEBOOK_PUBLISHING_ENABLED: bool = False
+    DRY_RUN: bool = True
     DAILY_PUBLISH_SLOTS: list[str] = ["09:00", "12:00", "15:00", "18:00", "21:00"]
     MAX_DAILY_PUBLISHED_VIDEOS: int = 5
     ADVANCE_RENDER_MINUTES: int = 60  # Render video up to 60m ahead of scheduled slot

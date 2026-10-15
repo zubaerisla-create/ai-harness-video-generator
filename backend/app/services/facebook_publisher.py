@@ -43,16 +43,35 @@ class FacebookPublisherService:
         access_token: Optional[str] = None,
         graph_version: Optional[str] = None
     ):
-        self.page_id = (page_id if page_id is not None else settings.META_PAGE_ID).strip()
-        self.access_token = (access_token if access_token is not None else settings.META_PAGE_ACCESS_TOKEN).strip()
-        self.graph_version = (graph_version if graph_version is not None else settings.META_GRAPH_API_VERSION).strip()
-        self.graph_url = f"https://graph.facebook.com/{self.graph_version}"
-        self.video_url = f"https://graph-video.facebook.com/{self.graph_version}"
+        self._page_id = page_id
+        self._access_token = access_token
+        self._graph_version = graph_version
+
+    @property
+    def page_id(self) -> str:
+        return (self._page_id if self._page_id is not None else settings.META_PAGE_ID).strip()
+
+    @property
+    def access_token(self) -> str:
+        return (self._access_token if self._access_token is not None else settings.META_PAGE_ACCESS_TOKEN).strip()
+
+    @property
+    def graph_version(self) -> str:
+        return (self._graph_version if self._graph_version is not None else settings.META_GRAPH_API_VERSION).strip()
+
+    @property
+    def graph_url(self) -> str:
+        return f"https://graph.facebook.com/{self.graph_version}"
+
+    @property
+    def video_url(self) -> str:
+        return f"https://graph-video.facebook.com/{self.graph_version}"
 
     async def verify_page_access(self) -> Dict[str, Any]:
         """
-        Verifies that the configured page access token is valid and can access the Page.
-        Never exposes the access token in returned data or logs.
+        Verifies that the configured page access token is valid, is a true Page access token,
+        and has authorization to read and publish to the Page Video API.
+        Never exposes the raw access token in returned data or logs.
         """
         if not self.access_token or not self.page_id:
             return {
@@ -62,41 +81,84 @@ class FacebookPublisherService:
                 "token_masked": mask_token(self.access_token)
             }
 
-        url = f"{self.graph_url}/{self.page_id}"
-        params = {
-            "fields": "id,name,category,link,is_published",
-            "access_token": self.access_token
-        }
-
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.get(url, params=params)
-                
-                if res.status_code == 200:
-                    data = res.json()
-                    logger.info(f"Facebook Page verified: {data.get('name')} (ID: {data.get('id')})")
-                    return {
-                        "valid": True,
-                        "page_id": data.get("id"),
-                        "page_name": data.get("name"),
-                        "category": data.get("category"),
-                        "link": data.get("link"),
-                        "is_published": data.get("is_published", True),
-                        "token_masked": mask_token(self.access_token)
-                    }
-                else:
-                    err_json = res.json().get("error", {})
-                    err_msg = err_json.get("message", res.text)
-                    err_type = err_json.get("type", "Unknown")
-                    err_code = err_json.get("code", res.status_code)
-                    safe_msg = f"Graph API error ({err_code}): {err_msg} [{err_type}]"
-                    logger.error(f"Facebook Page verification failed: {safe_msg}")
+                # 1. Verify token context via /me (determines if it's a Page token or User token)
+                me_url = f"{self.graph_url}/me"
+                me_res = await client.get(me_url, params={"access_token": self.access_token})
+                if me_res.status_code != 200:
+                    err_json = me_res.json().get("error", {})
+                    err_msg = err_json.get("message", me_res.text)
                     return {
                         "valid": False,
-                        "error": safe_msg,
-                        "error_code": err_code,
+                        "error": f"Invalid token (/me verification failed): {err_msg}",
+                        "page_id": self.page_id,
                         "token_masked": mask_token(self.access_token)
                     }
+
+                me_data = me_res.json()
+                token_owner_id = str(me_data.get("id"))
+                is_direct_page_token = (token_owner_id == self.page_id)
+
+                if not is_direct_page_token:
+                    logger.warning(
+                        f"Configured token belongs to user/entity ID {token_owner_id} ({me_data.get('name')}), "
+                        f"not target Page ID {self.page_id}."
+                    )
+                    return {
+                        "valid": False,
+                        "is_page_token": False,
+                        "error": (
+                            f"The configured token belongs to entity '{me_data.get('name')}' (ID: {token_owner_id}), "
+                            f"not target Page ID {self.page_id}. Please use the Page access token for Devlance Ai."
+                        ),
+                        "token_masked": mask_token(self.access_token)
+                    }
+
+                # 2. Query page node details
+                page_url = f"{self.graph_url}/{self.page_id}"
+                page_res = await client.get(
+                    page_url,
+                    params={
+                        "fields": "id,name,category,link,is_published",
+                        "access_token": self.access_token
+                    }
+                )
+                if page_res.status_code != 200:
+                    err_json = page_res.json().get("error", {})
+                    return {
+                        "valid": False,
+                        "error": f"Page query failed: {err_json.get('message', page_res.text)}",
+                        "token_masked": mask_token(self.access_token)
+                    }
+
+                page_data = page_res.json()
+
+                # 3. Verify Video API endpoint access
+                video_endpoint_ok = False
+                try:
+                    v_res = await client.get(
+                        f"{self.video_url}/{self.page_id}/videos",
+                        params={"access_token": self.access_token, "limit": 1}
+                    )
+                    video_endpoint_ok = (v_res.status_code == 200)
+                except Exception:
+                    video_endpoint_ok = False
+
+                logger.info(f"Facebook Page verified: '{page_data.get('name')}' (ID: {page_data.get('id')}) via {self.graph_version}")
+                return {
+                    "valid": True,
+                    "is_page_token": True,
+                    "graph_version": self.graph_version,
+                    "page_id": page_data.get("id"),
+                    "page_name": page_data.get("name"),
+                    "category": page_data.get("category"),
+                    "link": page_data.get("link"),
+                    "is_published": page_data.get("is_published", True),
+                    "video_api_accessible": video_endpoint_ok,
+                    "token_masked": mask_token(self.access_token)
+                }
+
         except Exception as e:
             logger.error(f"Network error verifying Facebook Page: {e}")
             return {
@@ -142,7 +204,7 @@ class FacebookPublisherService:
     ) -> PublishResult:
         """
         Publishes a rendered MP4 video to the configured Facebook Page.
-        Supports multipart direct upload, token masking, and dry-run execution.
+        Guarantees dry-run safety, live publishing guards, and token masking.
         """
         video_path = Path(video_path)
         if not video_path.exists():
@@ -165,12 +227,12 @@ class FacebookPublisherService:
             if clean_tags and clean_tags not in clean_desc:
                 clean_desc = f"{clean_desc}\n\n{clean_tags}"
 
-        # Dry run guard
+        # 1. DRY_RUN Guard: Never publish a real video in dry-run mode
         if settings.DRY_RUN:
             simulated_id = f"dry_run_{int(time.time())}"
             logger.info(
                 f"[DRY_RUN] Simulated publication for Job {job_id or 'N/A'}: "
-                f"File: {video_path.name} ({round(file_size/(1024*1024), 2)}MB) -> Facebook Video ID: {simulated_id}"
+                f"File: {video_path.name} ({round(file_size/(1024*1024), 2)}MB) -> Simulated ID: {simulated_id}"
             )
             return PublishResult(
                 success=True,
@@ -180,10 +242,19 @@ class FacebookPublisherService:
                 status_code=200
             )
 
+        # Check credentials
         if not self.access_token or not self.page_id:
             return PublishResult(
                 success=False,
                 error_message="Missing Facebook credentials (META_PAGE_ID or META_PAGE_ACCESS_TOKEN)."
+            )
+
+        # 2. Live Publishing Guard: If FACEBOOK_PUBLISHING_ENABLED is False and not DRY_RUN, refuse to upload
+        if not settings.FACEBOOK_PUBLISHING_ENABLED:
+            logger.warning("Publication aborted: FACEBOOK_PUBLISHING_ENABLED is False.")
+            return PublishResult(
+                success=False,
+                error_message="Live publishing is currently disabled (FACEBOOK_PUBLISHING_ENABLED=False). Enable it to publish live."
             )
 
         upload_endpoint = f"{self.video_url}/{self.page_id}/videos"

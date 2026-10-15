@@ -1,6 +1,7 @@
 import pytest
 import shutil
 from pathlib import Path
+from backend.app.config import settings
 from backend.app.services.image_generator import StoryboardCanvasProvider
 from backend.app.services.video_renderer import VideoRenderer
 from backend.app.services.quality_validator import QualityValidator

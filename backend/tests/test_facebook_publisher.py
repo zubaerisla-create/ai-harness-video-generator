@@ -70,7 +70,8 @@ async def test_facebook_publisher_mocked_success(tmp_path: Path):
     mock_post_resp.json.return_value = {"id": "fb_video_999888777", "post_id": "fb_post_111222333"}
     mock_post_resp.headers = {"content-type": "application/json"}
 
-    with patch("backend.app.config.settings.DRY_RUN", False):
+    with patch("backend.app.config.settings.DRY_RUN", False), \
+         patch("backend.app.config.settings.FACEBOOK_PUBLISHING_ENABLED", True):
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_post_resp):
             with patch.object(publisher, "verify_video_status", new_callable=AsyncMock, return_value={"published": True}):
                 res = await publisher.publish_video(
