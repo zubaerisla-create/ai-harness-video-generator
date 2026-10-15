@@ -82,15 +82,27 @@ class Settings(BaseSettings):
     ENABLE_TRANSITION_SFX: bool = True     # Whooshes, risers & impact drops
     SFX_VOLUME: float = 0.20
     
+    # Meta / Facebook Graph API Credentials & Settings
+    META_PAGE_ID: str = "1120237794506468"
+    META_PAGE_ACCESS_TOKEN: str = ""
+    META_APP_ID: str = "3033676750313311"
+    META_APP_SECRET: str = ""
+    META_GRAPH_API_VERSION: str = "v21.0"
+
+    # Autonomous Scheduling & Facebook Publishing Agent
+    TIMEZONE: str = "Asia/Dhaka"
+    FACEBOOK_PUBLISHING_ENABLED: bool = True
+    DRY_RUN: bool = False
+    DAILY_PUBLISH_SLOTS: list[str] = ["09:00", "12:00", "15:00", "18:00", "21:00"]
+    MAX_DAILY_PUBLISHED_VIDEOS: int = 5
+    ADVANCE_RENDER_MINUTES: int = 60  # Render video up to 60m ahead of scheduled slot
+
     # Retention
     AUTO_CLEANUP_TEMP_FILES: bool = True
     RETENTION_DAYS: int = 30  # Auto purge older videos if retention enabled
     ENABLE_RETENTION_PURGE: bool = False
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "allow"
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "allow"}
 
 settings = Settings()
 

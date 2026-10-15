@@ -11,6 +11,7 @@ from backend.app.api.auth import router as auth_router, get_password_hash
 from backend.app.api.jobs import router as jobs_router
 from backend.app.api.videos import router as videos_router
 from backend.app.api.system import router as system_router
+from backend.app.api.facebook import router as facebook_router
 from backend.app.workers.queue import worker_service
 from backend.app.services.auto_pilot import auto_pilot
 
@@ -66,6 +67,7 @@ app.include_router(auth_router)
 app.include_router(jobs_router)
 app.include_router(videos_router)
 app.include_router(system_router)
+app.include_router(facebook_router)
 
 from backend.app.database.session import get_db
 from backend.app.api.system import get_system_stats, get_system_resources

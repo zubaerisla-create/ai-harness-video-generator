@@ -188,5 +188,12 @@ def _format_job_response(job) -> JobResponse:
         completed_at=job.completed_at,
         video=video_dict,
         scenes=scenes_list,
-        benchmark_data=bench_data
+        benchmark_data=bench_data,
+        facebook_video_id=job.facebook_video_id,
+        facebook_post_id=job.facebook_post_id,
+        scheduled_publish_time=job.scheduled_publish_time,
+        published_at=job.published_at,
+        caption=job.caption,
+        hashtags=job.hashtags,
+        upload_error=job.upload_error
     )

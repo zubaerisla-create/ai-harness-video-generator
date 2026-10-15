@@ -30,11 +30,27 @@ class VideoJob(Base):
     enable_bgm: Mapped[bool] = mapped_column(Boolean, default=True)
     
     # Status & Progress
-    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending, processing, completed, failed, cancelled
+    # Allowed statuses: pending, processing, ready, uploading, published, failed, cancelled, retry_pending, needs_attention
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)
-    stage: Mapped[str] = mapped_column(String(50), default="queued")  # queued, planning, visuals, narration, subtitles, rendering, validating, done
+    # Allowed stages: queued, planning, visuals, narration, subtitles, rendering, validating, ready, uploading, published, done, error
+    stage: Mapped[str] = mapped_column(String(50), default="queued")
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     benchmark_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON-encoded benchmark metrics
+
+    # Content & Source Metadata
+    content_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    caption: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    hashtags: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    sources_used: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON list of source URLs
+
+    # Facebook Publishing Fields
+    facebook_video_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    facebook_post_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    scheduled_publish_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    upload_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    upload_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
@@ -58,6 +74,7 @@ class Video(Base):
     height: Mapped[int] = mapped_column(Integer, default=1280)
     fps: Mapped[float] = mapped_column(Float, default=24.0)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
+    sha256_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     # Relationships
@@ -79,3 +96,15 @@ class Scene(Base):
 
     # Relationships
     job: Mapped["VideoJob"] = relationship("VideoJob", back_populates="scenes")
+
+class DailyPublication(Base):
+    __tablename__ = "daily_publications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    local_date: Mapped[str] = mapped_column(String(10), unique=True, index=True, nullable=False)  # YYYY-MM-DD
+    timezone: Mapped[str] = mapped_column(String(50), default="Asia/Dhaka")
+    published_count: Mapped[int] = mapped_column(Integer, default=0)
+    slots_fulfilled: Mapped[Optional[str]] = mapped_column(Text, default="[]")  # JSON list of fulfilled slots
+    video_ids: Mapped[Optional[str]] = mapped_column(Text, default="[]")  # JSON list of published video IDs
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

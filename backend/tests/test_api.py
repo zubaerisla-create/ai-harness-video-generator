@@ -39,3 +39,29 @@ async def test_api_login_flow():
         me_resp = await ac.get("/api/auth/me", headers=headers)
         assert me_resp.status_code == 200
         assert me_resp.json()["username"] == settings.ADMIN_USERNAME
+
+@pytest.mark.asyncio
+async def test_facebook_api_endpoints():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Test status endpoint
+        status_resp = await ac.get("/api/facebook/status")
+        assert status_resp.status_code == 200
+        s_data = status_resp.json()
+        assert "page_connected" in s_data
+        assert "daily_target" in s_data
+        assert s_data["timezone"] == "Asia/Dhaka"
+        assert len(s_data["slots"]) == 5
+
+        # Test daily summary endpoint
+        summary_resp = await ac.get("/api/facebook/daily-summary")
+        assert summary_resp.status_code == 200
+        sum_data = summary_resp.json()
+        assert sum_data["daily_target"] == 5
+        assert "published_count" in sum_data
+        assert "slots_fulfilled" in sum_data
+
+        # Test toggle dry run endpoint
+        dry_resp = await ac.post("/api/facebook/dry-run", json={"enabled": True})
+        assert dry_resp.status_code == 200
+        assert dry_resp.json()["dry_run"] is True

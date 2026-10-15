@@ -93,8 +93,7 @@ class SceneResponse(BaseModel):
     duration: float
     status: str
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 class VideoResponse(BaseModel):
     id: str
@@ -109,8 +108,7 @@ class VideoResponse(BaseModel):
     download_url: str
     thumbnail_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 class JobResponse(BaseModel):
     id: str
@@ -132,9 +130,15 @@ class JobResponse(BaseModel):
     video: Optional[VideoResponse] = None
     scenes: Optional[List[SceneResponse]] = None
     benchmark_data: Optional[Dict[str, Any]] = None
+    facebook_video_id: Optional[str] = None
+    facebook_post_id: Optional[str] = None
+    scheduled_publish_time: Optional[datetime] = None
+    published_at: Optional[datetime] = None
+    caption: Optional[str] = None
+    hashtags: Optional[str] = None
+    upload_error: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 class UserLogin(BaseModel):
     username: str

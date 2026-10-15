@@ -8,9 +8,10 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
+import zoneinfo
 from backend.app.config import settings
 from backend.app.database.session import AsyncSessionLocal
-from backend.app.database.repository import JobRepository, VideoRepository, SceneRepository
+from backend.app.database.repository import JobRepository, VideoRepository, SceneRepository, DailyPublicationRepository
 from backend.app.services.story_planner import StoryPlanner
 from backend.app.services.image_generator import ImageGeneratorService
 from backend.app.services.voice_generator import VoiceGenerator
@@ -18,6 +19,7 @@ from backend.app.services.subtitle_generator import SubtitleGenerator
 from backend.app.services.music_library import MusicLibraryService
 from backend.app.services.video_renderer import VideoRenderer
 from backend.app.services.quality_validator import QualityValidator
+from backend.app.services.facebook_publisher import facebook_publisher
 
 logger = logging.getLogger("ai_harness.worker")
 
@@ -79,7 +81,16 @@ class VideoPipelineOrchestrator:
                         "status": "pending"
                     })
                 db_scenes = await scene_repo.create_scenes(scenes_to_create)
-                await job_repo.update_job_status(job_id, status="processing", progress=20, stage="visuals")
+                caption = f"{script.title}\n\n{script.synopsis}"
+                hashtags = "#DevlanceAi #AI #EmergingTech #Business #Innovation #Technology #Shorts"
+                await job_repo.update_job_status(
+                    job_id,
+                    status="processing",
+                    progress=20,
+                    stage="visuals",
+                    caption=caption,
+                    hashtags=hashtags
+                )
 
                 # ----------------------------------------------------
                 # STAGE 2: VISUAL GENERATION
@@ -229,14 +240,13 @@ class VideoPipelineOrchestrator:
                 await job_repo.update_job_status(job_id, status="processing", progress=90, stage="validating")
 
                 # ----------------------------------------------------
-                # STAGE 6: QUALITY VALIDATION
+                # STAGE 6: QUALITY VALIDATION & QA GATE
                 # ----------------------------------------------------
                 t0 = time.time()
-                validation = self.quality_validator.validate_video(
+                validation = self.quality_validator.validate_for_upload(
                     video_path=final_output_path,
-                    expected_duration=total_story_duration,
-                    expected_width=settings.DEFAULT_WIDTH,
-                    expected_height=settings.DEFAULT_HEIGHT
+                    title=script.title,
+                    caption=caption
                 )
                 timings["quality_validation_seconds"] = round(time.time() - t0, 2)
 
@@ -253,7 +263,8 @@ class VideoPipelineOrchestrator:
                     "width": validation.width,
                     "height": validation.height,
                     "fps": validation.fps,
-                    "file_size": validation.file_size_bytes
+                    "file_size": validation.file_size_bytes,
+                    "sha256_hash": validation.sha256_hash
                 })
 
                 # Record Benchmark Metrics
@@ -273,15 +284,19 @@ class VideoPipelineOrchestrator:
                     "cpu_cores": psutil.cpu_count(logical=True)
                 }
 
+                # Mark as 'ready' (ready for scheduled Facebook publishing slot)
+                final_status = "ready" if settings.FACEBOOK_PUBLISHING_ENABLED else "completed"
+                final_stage = "ready" if settings.FACEBOOK_PUBLISHING_ENABLED else "done"
+
                 await job_repo.update_job_status(
                     job_id=job_id,
-                    status="completed",
+                    status=final_status,
                     progress=100,
-                    stage="done",
+                    stage=final_stage,
                     benchmark_data=json.dumps(benchmark_metrics)
                 )
 
-                logger.info(f"Job {job_id} successfully completed in {total_job_time}s! Output: {final_output_path}")
+                logger.info(f"Job {job_id} successfully rendered and validated [{final_status}] in {total_job_time}s! Output: {final_output_path}")
 
                 # Auto cleanup temporary scene clips if enabled
                 if settings.AUTO_CLEANUP_TEMP_FILES:
@@ -302,6 +317,99 @@ class VideoPipelineOrchestrator:
                     progress=100,
                     stage="error",
                     error_message=err_text
+                )
+                return False
+
+    async def publish_job(self, job_id: str, slot: Optional[str] = None) -> bool:
+        """
+        Executes pre-upload QA gate and publishes a ready/completed video to the Facebook Page.
+        Guarantees idempotency: will not double-publish if video already published.
+        Updates persistent daily counter upon confirmed Facebook publication.
+        """
+        async with AsyncSessionLocal() as session:
+            job_repo = JobRepository(session)
+            daily_repo = DailyPublicationRepository(session)
+
+            job = await job_repo.get_job_by_id(job_id)
+            if not job or not job.video:
+                logger.error(f"Cannot publish job {job_id}: job or video record not found")
+                return False
+
+            # Check idempotency: if already published, skip
+            if job.status == "published" and job.facebook_video_id:
+                logger.info(f"Job {job_id} already published (Facebook Video ID: {job.facebook_video_id})")
+                return True
+
+            video_path = Path(job.video.file_path)
+            if not video_path.exists():
+                err = f"Rendered video file missing from disk: {video_path}"
+                logger.error(f"Cannot publish job {job_id}: {err}")
+                await job_repo.update_job_status(job_id, status="failed", upload_error=err)
+                return False
+
+            # Pre-upload Quality Assurance Gate
+            caption = job.caption or f"{job.video.title}\n\nAutomated AI Documentary Breakdown"
+            qa_res = self.quality_validator.validate_for_upload(
+                video_path=video_path,
+                title=job.video.title,
+                caption=caption
+            )
+            if not qa_res.is_valid:
+                err = f"QA Gate Rejected: {qa_res.error_message}"
+                logger.error(f"Job {job_id} failed pre-upload QA gate: {err}")
+                await job_repo.update_job_status(job_id, status="failed", stage="qa_failed", upload_error=err)
+                return False
+
+            # Mark state as uploading before calling API
+            attempts = (job.upload_attempts or 0) + 1
+            await job_repo.update_job_status(
+                job_id,
+                status="uploading",
+                stage="uploading_to_facebook",
+                upload_attempts=attempts
+            )
+
+            # Call Facebook Publisher
+            hashtags = job.hashtags or "#DevlanceAi #AI #EmergingTech #Business #Innovation #Technology #Shorts"
+            result = await facebook_publisher.publish_video(
+                video_path=video_path,
+                title=job.video.title,
+                caption=caption,
+                hashtags=hashtags,
+                job_id=job_id
+            )
+
+            tz = zoneinfo.ZoneInfo(settings.TIMEZONE)
+            local_now = datetime.now(tz)
+            local_date_str = local_now.strftime("%Y-%m-%d")
+
+            if result.success:
+                slot_name = slot or local_now.strftime("%H:%M")
+                await job_repo.update_job_status(
+                    job_id,
+                    status="published",
+                    stage="published",
+                    progress=100,
+                    facebook_video_id=result.video_id,
+                    facebook_post_id=result.post_id,
+                    published_at=datetime.utcnow()
+                )
+                await daily_repo.record_publication(
+                    local_date=local_date_str,
+                    slot=slot_name,
+                    video_id=result.video_id or job_id,
+                    timezone=settings.TIMEZONE
+                )
+                logger.info(f"Successfully published Job {job_id} to Facebook Page (Video ID: {result.video_id}) for slot {slot_name}")
+                return True
+            else:
+                logger.warning(f"Failed to publish Job {job_id} to Facebook: {result.error_message}")
+                new_status = "retry_pending" if (result.retryable and attempts < 2) else "failed"
+                await job_repo.update_job_status(
+                    job_id,
+                    status=new_status,
+                    stage="upload_error",
+                    upload_error=result.error_message
                 )
                 return False
 

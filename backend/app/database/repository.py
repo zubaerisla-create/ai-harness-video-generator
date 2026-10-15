@@ -4,7 +4,8 @@ from sqlalchemy import select, update, delete, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from backend.app.models.database import VideoJob, Video, Scene, User
+import json
+from backend.app.models.database import VideoJob, Video, Scene, User, DailyPublication
 
 class JobRepository:
     def __init__(self, session: AsyncSession):
@@ -40,7 +41,16 @@ class JobRepository:
         progress: Optional[int] = None,
         stage: Optional[str] = None,
         error_message: Optional[str] = None,
-        benchmark_data: Optional[str] = None
+        benchmark_data: Optional[str] = None,
+        facebook_video_id: Optional[str] = None,
+        facebook_post_id: Optional[str] = None,
+        published_at: Optional[datetime] = None,
+        scheduled_publish_time: Optional[datetime] = None,
+        upload_error: Optional[str] = None,
+        upload_attempts: Optional[int] = None,
+        caption: Optional[str] = None,
+        hashtags: Optional[str] = None,
+        sources_used: Optional[str] = None
     ) -> Optional[VideoJob]:
         values: Dict[str, Any] = {"status": status}
         if progress is not None:
@@ -51,9 +61,28 @@ class JobRepository:
             values["error_message"] = error_message
         if benchmark_data is not None:
             values["benchmark_data"] = benchmark_data
+        if facebook_video_id is not None:
+            values["facebook_video_id"] = facebook_video_id
+        if facebook_post_id is not None:
+            values["facebook_post_id"] = facebook_post_id
+        if published_at is not None:
+            values["published_at"] = published_at
+        if scheduled_publish_time is not None:
+            values["scheduled_publish_time"] = scheduled_publish_time
+        if upload_error is not None:
+            values["upload_error"] = upload_error
+        if upload_attempts is not None:
+            values["upload_attempts"] = upload_attempts
+        if caption is not None:
+            values["caption"] = caption
+        if hashtags is not None:
+            values["hashtags"] = hashtags
+        if sources_used is not None:
+            values["sources_used"] = sources_used
+
         if status == "processing":
             values["started_at"] = datetime.utcnow()
-        elif status in ["completed", "failed", "cancelled"]:
+        elif status in ["completed", "published", "failed", "cancelled"]:
             values["completed_at"] = datetime.utcnow()
 
         stmt = update(VideoJob).where(VideoJob.id == job_id).values(**values).execution_options(synchronize_session="fetch")
@@ -72,13 +101,42 @@ class JobRepository:
         return result.scalar_one_or_none()
 
     async def get_running_jobs_count(self) -> int:
-        stmt = select(func.count(VideoJob.id)).where(VideoJob.status == "processing")
+        stmt = select(func.count(VideoJob.id)).where(VideoJob.status.in_(["processing", "uploading"]))
         result = await self.session.execute(stmt)
         return result.scalar_one() or 0
 
-    async def recover_stale_jobs(self) -> int:
-        # Marks any 'processing' jobs as 'failed' (interrupted by server restart)
+    async def get_ready_job_for_slot(self) -> Optional[VideoJob]:
+        """Returns the oldest completed/ready video that has not yet been published to Facebook."""
         stmt = (
+            select(VideoJob)
+            .where(
+                VideoJob.status.in_(["ready", "completed"]),
+                VideoJob.facebook_video_id.is_(None)
+            )
+            .options(selectinload(VideoJob.video))
+            .order_by(VideoJob.created_at)
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_retryable_upload_jobs(self) -> List[VideoJob]:
+        """Finds jobs waiting for upload retry after transient error."""
+        stmt = (
+            select(VideoJob)
+            .where(
+                VideoJob.status == "retry_pending",
+                VideoJob.upload_attempts < 2
+            )
+            .options(selectinload(VideoJob.video))
+            .limit(5)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def recover_stale_jobs(self) -> int:
+        """Recovers interrupted jobs on server restart without duplicate publishing."""
+        stmt1 = (
             update(VideoJob)
             .where(VideoJob.status == "processing")
             .values(
@@ -87,9 +145,19 @@ class JobRepository:
                 completed_at=datetime.utcnow()
             )
         )
-        result = await self.session.execute(stmt)
+        # Any job interrupted in 'uploading' should become 'retry_pending' to verify state
+        stmt2 = (
+            update(VideoJob)
+            .where(VideoJob.status == "uploading")
+            .values(
+                status="retry_pending",
+                upload_error="Upload interrupted by server restart. Scheduled for verification."
+            )
+        )
+        r1 = await self.session.execute(stmt1)
+        r2 = await self.session.execute(stmt2)
         await self.session.commit()
-        return result.rowcount
+        return r1.rowcount + r2.rowcount
 
 class VideoRepository:
     def __init__(self, session: AsyncSession):
@@ -161,3 +229,51 @@ class UserRepository:
         await self.session.commit()
         await self.session.refresh(user)
         return user
+
+class DailyPublicationRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get_or_create_daily(self, local_date: str, timezone: str = "Asia/Dhaka") -> DailyPublication:
+        stmt = select(DailyPublication).where(DailyPublication.local_date == local_date)
+        res = await self.session.execute(stmt)
+        record = res.scalar_one_or_none()
+        if not record:
+            record = DailyPublication(
+                local_date=local_date,
+                timezone=timezone,
+                published_count=0,
+                slots_fulfilled="[]",
+                video_ids="[]"
+            )
+            self.session.add(record)
+            await self.session.commit()
+            await self.session.refresh(record)
+        return record
+
+    async def record_publication(self, local_date: str, slot: str, video_id: str, timezone: str = "Asia/Dhaka") -> DailyPublication:
+        record = await self.get_or_create_daily(local_date, timezone)
+        slots = json.loads(record.slots_fulfilled or "[]")
+        if slot not in slots:
+            slots.append(slot)
+        vids = json.loads(record.video_ids or "[]")
+        if video_id not in vids:
+            vids.append(video_id)
+        
+        record.published_count = len(vids)
+        record.slots_fulfilled = json.dumps(slots)
+        record.video_ids = json.dumps(vids)
+        record.updated_at = datetime.utcnow()
+        await self.session.commit()
+        await self.session.refresh(record)
+        return record
+
+    async def get_today_count(self, local_date: str) -> int:
+        record = await self.get_or_create_daily(local_date)
+        return record.published_count
+
+    async def is_slot_fulfilled(self, local_date: str, slot: str) -> bool:
+        record = await self.get_or_create_daily(local_date)
+        slots = json.loads(record.slots_fulfilled or "[]")
+        return slot in slots
+

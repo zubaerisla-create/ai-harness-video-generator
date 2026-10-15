@@ -3,15 +3,17 @@ import json
 import asyncio
 import logging
 import random
-from datetime import datetime, timedelta
+import zoneinfo
+from datetime import datetime, timedelta, time as dtime
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from sqlalchemy import select, func
 
 from backend.app.config import settings
 from backend.app.database.session import AsyncSessionLocal
-from backend.app.database.repository import JobRepository
+from backend.app.database.repository import JobRepository, DailyPublicationRepository
 from backend.app.models.database import VideoJob
+from backend.app.services.facebook_publisher import facebook_publisher
 
 logger = logging.getLogger("ai_harness.auto_pilot")
 
@@ -81,102 +83,252 @@ PILLAR_TOPICS: Dict[str, List[Tuple[str, str]]] = {
 HISTORY_FILE = settings.DATA_DIR / "autopilot_topic_history.json"
 
 class AutoPilotService:
+    """
+    Autonomous AI Content Automation & Facebook Publishing Agent.
+    Strictly manages 5 daily publication slots with >= 2 hours between slots in Asia/Dhaka.
+    Ensures advance rendering, idempotency, restart-safety, and persistent daily quota tracking.
+    """
+
     def __init__(self):
         self.enabled: bool = settings.AUTOPILOT_ENABLED
-        self.daily_target: int = 5  # Strictly 5 unique videos per day
-        self._task: asyncio.Task = None
+        self.daily_target: int = settings.MAX_DAILY_PUBLISHED_VIDEOS  # Strictly 5 videos per day
+        self.timezone_name: str = settings.TIMEZONE
+        self.publish_slots: List[str] = list(settings.DAILY_PUBLISH_SLOTS)
+        self._task: Optional[asyncio.Task] = None
         self._running: bool = False
         self._pillars = list(PILLAR_TOPICS.keys())
         self._pillar_index = 0
+        self._last_retry_check: float = 0.0
+
+    def get_tz(self) -> zoneinfo.ZoneInfo:
+        return zoneinfo.ZoneInfo(self.timezone_name)
+
+    def get_local_now(self) -> datetime:
+        return datetime.now(self.get_tz())
 
     async def start(self):
         self._running = True
         self._task = asyncio.create_task(self._pilot_loop())
-        logger.info(f"Auto-Pilot 5-Daily Engine active (Target: {self.daily_target} videos/day, Focused Pillars: {len(self._pillars)})")
+        logger.info(
+            f"Auto-Pilot Autonomous Facebook Agent active "
+            f"(Timezone: {self.timezone_name}, Slots: {self.publish_slots}, Daily Target: {self.daily_target})"
+        )
 
     async def stop(self):
         self._running = False
         if self._task:
             self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Auto-Pilot Autonomous Facebook Agent stopped.")
 
-    def set_config(self, enabled: bool, target: int = 5):
+    def set_config(self, enabled: bool, target: int = 5, slots: Optional[List[str]] = None):
         self.enabled = enabled
         self.daily_target = max(1, min(10, target))
-        logger.info(f"Auto-Pilot updated: enabled={self.enabled}, daily_target={self.daily_target}")
+        if slots:
+            self.publish_slots = slots
+        logger.info(f"Auto-Pilot config updated: enabled={self.enabled}, daily_target={self.daily_target}, slots={self.publish_slots}")
 
     async def get_status(self) -> Dict[str, Any]:
+        local_now = self.get_local_now()
+        local_date_str = local_now.strftime("%Y-%m-%d")
+
         async with AsyncSessionLocal() as session:
-            since = datetime.utcnow() - timedelta(hours=24)
-            stmt = select(func.count(VideoJob.id)).where(
-                VideoJob.status == "completed",
-                VideoJob.completed_at >= since
-            )
-            res = await session.execute(stmt)
-            completed_24h = res.scalar_one() or 0
+            daily_repo = DailyPublicationRepository(session)
+            job_repo = JobRepository(session)
+
+            daily_rec = await daily_repo.get_or_create_daily(local_date_str, self.timezone_name)
+            published_count = daily_rec.published_count
+            fulfilled_slots = json.loads(daily_rec.slots_fulfilled or "[]")
+            ready_job = await job_repo.get_ready_job_for_slot()
+            active_jobs = await job_repo.get_running_jobs_count()
+
+        # Slot matrix
+        slot_status_list = []
+        next_slot = None
+        for s in self.publish_slots:
+            is_fulfilled = s in fulfilled_slots
+            # Parse slot time
+            sh, sm = map(int, s.split(":"))
+            slot_dt = local_now.replace(hour=sh, minute=sm, second=0, microsecond=0)
+            
+            if is_fulfilled:
+                status_label = "published"
+            elif local_now < slot_dt:
+                status_label = "upcoming"
+                if next_slot is None:
+                    next_slot = s
+            elif local_now >= slot_dt and (local_now - slot_dt) < timedelta(hours=2):
+                status_label = "due_now"
+                if next_slot is None:
+                    next_slot = s
+            else:
+                status_label = "passed_unfulfilled"
+
+            slot_status_list.append({
+                "slot": s,
+                "status": status_label,
+                "fulfilled": is_fulfilled
+            })
 
         return {
             "enabled": self.enabled,
+            "timezone": self.timezone_name,
+            "local_time": local_now.strftime("%Y-%m-%d %H:%M:%S"),
+            "local_date": local_date_str,
             "daily_target": self.daily_target,
-            "completed_last_24h": completed_24h,
-            "target_met": completed_24h >= self.daily_target,
-            "pillars_active": ["business_strategy", "ai_news", "sci_fi_concept", "emerging_tech", "future_predictions"]
+            "published_today": published_count,
+            "quota_remaining": max(0, self.daily_target - published_count),
+            "quota_met": published_count >= self.daily_target,
+            "next_slot": next_slot,
+            "slots": slot_status_list,
+            "has_ready_video": ready_job is not None,
+            "active_pipeline_jobs": active_jobs,
+            "dry_run": settings.DRY_RUN,
+            "pillars_active": self._pillars
         }
 
     async def _pilot_loop(self):
-        # Allow startup grace period
-        await asyncio.sleep(5.0)
+        # Brief startup grace period
+        await asyncio.sleep(4.0)
 
         while self._running:
             try:
                 if self.enabled:
-                    await self._check_and_produce()
+                    await self._check_and_orchestrate()
             except Exception as e:
-                logger.error(f"Auto-Pilot check error: {e}")
+                logger.error(f"Auto-Pilot loop exception: {e}", exc_info=True)
 
-            # Check every 90 seconds
-            await asyncio.sleep(90.0)
+            # Check every 45 seconds for precision slot publishing
+            await asyncio.sleep(45.0)
 
-    async def _check_and_produce(self):
+    async def _check_and_orchestrate(self):
+        """Main scheduling and publishing evaluation cycle."""
+        local_now = self.get_local_now()
+        local_date_str = local_now.strftime("%Y-%m-%d")
+
         async with AsyncSessionLocal() as session:
+            daily_repo = DailyPublicationRepository(session)
             job_repo = JobRepository(session)
-            
-            # If system is currently busy processing or has queued jobs, wait
-            active_count = await job_repo.get_running_jobs_count()
-            next_pending = await job_repo.get_next_pending_job()
-            if active_count > 0 or next_pending:
+
+            daily_rec = await daily_repo.get_or_create_daily(local_date_str, self.timezone_name)
+            published_count = daily_rec.published_count
+            fulfilled_slots = json.loads(daily_rec.slots_fulfilled or "[]")
+
+            # Strict Invariant: Never publish more than daily_target (5) videos per local day
+            if published_count >= self.daily_target:
                 return
 
-            # Check completed videos in last 24 hours
-            since = datetime.utcnow() - timedelta(hours=24)
-            stmt = select(func.count(VideoJob.id)).where(
-                VideoJob.status == "completed",
-                VideoJob.completed_at >= since
-            )
-            res = await session.execute(stmt)
-            completed_today = res.scalar_one() or 0
+            from backend.app.workers.queue import worker_service
 
-            if completed_today >= self.daily_target:
-                return
+            # --------------------------------------------------------
+            # STEP 1: Process Transient Retries (if any)
+            # --------------------------------------------------------
+            retry_jobs = await job_repo.get_retryable_upload_jobs()
+            for r_job in retry_jobs:
+                if published_count >= self.daily_target:
+                    break
+                # Only retry if at least 5 minutes since last attempt
+                if r_job.completed_at and (datetime.utcnow() - r_job.completed_at).total_seconds() < 300:
+                    continue
+                logger.info(f"[Auto-Pilot] Retrying upload for Job {r_job.id} (Attempt {r_job.upload_attempts + 1})")
+                success = await worker_service.orchestrator.publish_job(r_job.id)
+                if success:
+                    published_count += 1
+                    return  # Yield turn after action
 
-            # Pick next unique topic from the rotating 5 pillars
-            style, prompt = await self._pick_next_unique_topic()
+            # --------------------------------------------------------
+            # STEP 2: Evaluate Scheduled Publishing Slots Due Right Now
+            # --------------------------------------------------------
+            for slot_str in self.publish_slots:
+                if published_count >= self.daily_target:
+                    break
+                if slot_str in fulfilled_slots:
+                    continue
 
-            logger.info(f"[Auto-Pilot] Scheduling Video {completed_today + 1}/{self.daily_target} [{style}]: '{prompt}'")
+                sh, sm = map(int, slot_str.split(":"))
+                slot_dt = local_now.replace(hour=sh, minute=sm, second=0, microsecond=0)
 
-            # Optimal viral shorts length: 45 seconds (9:16 vertical)
-            await job_repo.create_job({
-                "prompt": prompt,
-                "style": style,
-                "requested_duration": 45,
-                "requested_resolution": "720p",
-                "aspect_ratio": "9:16",
-                "enable_narration": True,
-                "enable_subtitles": True,
-                "enable_bgm": True,
-                "status": "pending",
-                "progress": 0,
-                "stage": "queued"
-            })
+                # Is this slot due now? (Between slot_dt and slot_dt + 2 hours)
+                if slot_dt <= local_now < (slot_dt + timedelta(hours=2)):
+                    logger.info(f"[Auto-Pilot] Publishing Slot '{slot_str}' is DUE NOW (Local time: {local_now.strftime('%H:%M:%S')})")
+                    
+                    ready_job = await job_repo.get_ready_job_for_slot()
+                    if ready_job:
+                        logger.info(f"[Auto-Pilot] Publishing ready video Job {ready_job.id} for Slot '{slot_str}'")
+                        pub_ok = await worker_service.orchestrator.publish_job(ready_job.id, slot=slot_str)
+                        if pub_ok:
+                            published_count += 1
+                        return
+                    else:
+                        # No video is ready for this due slot. Check if one is generating
+                        active_count = await job_repo.get_running_jobs_count()
+                        pending_job = await job_repo.get_next_pending_job()
+                        if active_count == 0 and not pending_job:
+                            logger.warning(f"[Auto-Pilot] No ready video for due slot '{slot_str}'. Triggering immediate generation.")
+                            await self._schedule_advance_video(job_repo, target_slot_dt=slot_dt)
+                            return
+
+            # --------------------------------------------------------
+            # STEP 3: Advance Preparation (Render in Advance Before Slot)
+            # --------------------------------------------------------
+            # Find the next upcoming unfulfilled slot today
+            upcoming_slot = None
+            upcoming_slot_dt = None
+            for slot_str in self.publish_slots:
+                if slot_str in fulfilled_slots:
+                    continue
+                sh, sm = map(int, slot_str.split(":"))
+                s_dt = local_now.replace(hour=sh, minute=sm, second=0, microsecond=0)
+                if s_dt > local_now:
+                    upcoming_slot = slot_str
+                    upcoming_slot_dt = s_dt
+                    break
+
+            if upcoming_slot and upcoming_slot_dt:
+                # How much time until this upcoming slot?
+                diff_minutes = (upcoming_slot_dt - local_now).total_seconds() / 60.0
+                
+                # Check if we should render in advance (within advance window or queue empty)
+                ready_job = await job_repo.get_ready_job_for_slot()
+                active_count = await job_repo.get_running_jobs_count()
+                pending_job = await job_repo.get_next_pending_job()
+
+                if not ready_job and active_count == 0 and not pending_job:
+                    # If within configured advance render window or under daily quota
+                    if diff_minutes <= settings.ADVANCE_RENDER_MINUTES or diff_minutes <= 180:
+                        logger.info(
+                            f"[Auto-Pilot] Pre-rendering video in advance for Slot '{upcoming_slot}' "
+                            f"(Due in {int(diff_minutes)} mins at {upcoming_slot_dt.strftime('%H:%M')})"
+                        )
+                        await self._schedule_advance_video(job_repo, target_slot_dt=upcoming_slot_dt)
+
+    async def _schedule_advance_video(self, job_repo: JobRepository, target_slot_dt: Optional[datetime] = None):
+        """Generates a unique story topic and creates a pending pipeline job."""
+        style, prompt, sources = await self._pick_next_unique_topic()
+        
+        import uuid
+        content_id = f"doc_{style}_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:6]}"
+        logger.info(f"[Auto-Pilot] Created advance content plan [{content_id}] '{prompt}'")
+
+        await job_repo.create_job({
+            "prompt": prompt,
+            "style": style,
+            "requested_duration": 45,
+            "requested_resolution": "720p",
+            "aspect_ratio": "9:16",
+            "enable_narration": True,
+            "enable_subtitles": True,
+            "enable_bgm": True,
+            "status": "pending",
+            "progress": 0,
+            "stage": "queued",
+            "content_id": content_id,
+            "scheduled_publish_time": target_slot_dt.replace(tzinfo=None) if target_slot_dt else None,
+            "sources_used": json.dumps(sources) if sources else "[]"
+        })
 
     def _load_history(self) -> List[str]:
         if not HISTORY_FILE.exists():
@@ -199,12 +351,14 @@ class AutoPilotService:
         except Exception as e:
             logger.warning(f"Failed to record topic history: {e}")
 
-    async def _pick_next_unique_topic(self) -> Tuple[str, str]:
+    async def _pick_next_unique_topic(self) -> Tuple[str, str, List[str]]:
         history = set(self._load_history())
 
         # Select pillar in cyclic order to guarantee diversity
         pillar = self._pillars[self._pillar_index % len(self._pillars)]
         self._pillar_index += 1
+
+        sources = []
 
         # 1. Fetch live real-time breaking news for this category from OnlineResearcher
         try:
@@ -214,8 +368,11 @@ class AutoPilotService:
                 clean_title = title.strip()
                 if clean_title not in history and len(clean_title) > 12:
                     self._save_history(clean_title)
+                    link = meta.get("link")
+                    if link:
+                        sources.append(link)
                     logger.info(f"[Auto-Pilot] Selected live trending news topic: '{clean_title}' ({meta.get('publisher')})")
-                    return pillar, f"{clean_title}: {desc}"
+                    return pillar, f"{clean_title}: {desc}", sources
         except Exception as e:
             logger.warning(f"[Auto-Pilot] Live news discovery fallback: {e}")
 
@@ -229,7 +386,6 @@ class AutoPilotService:
         self._save_history(title)
 
         full_prompt = f"{title}: {description}"
-        return pillar, full_prompt
+        return pillar, full_prompt, sources
 
 auto_pilot = AutoPilotService()
-
