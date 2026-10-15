@@ -332,7 +332,10 @@ class VideoPipelineOrchestrator:
 
             job = await job_repo.get_job_by_id(job_id)
             if not job or not job.video:
-                logger.error(f"Cannot publish job {job_id}: job or video record not found")
+                err = f"Cannot publish job {job_id}: job or video record not found"
+                logger.error(err)
+                if job:
+                    await job_repo.update_job_status(job_id, status="failed", stage="error", upload_error=err)
                 return False
 
             # Check idempotency: if already published, skip
@@ -358,6 +361,8 @@ class VideoPipelineOrchestrator:
                 err = f"QA Gate Rejected: {qa_res.error_message}"
                 logger.error(f"Job {job_id} failed pre-upload QA gate: {err}")
                 await job_repo.update_job_status(job_id, status="failed", stage="qa_failed", upload_error=err)
+                return False
+
             # Check atomic daily quota in database before initiating upload
             tz = zoneinfo.ZoneInfo(settings.TIMEZONE)
             local_now = datetime.now(tz)

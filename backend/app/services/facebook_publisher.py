@@ -86,7 +86,7 @@ class FacebookPublisherService:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 # 1. Verify token context via /me (determines if it's a Page token or User token)
                 me_url = f"{self.graph_url}/me"
-                me_res = await client.get(me_url, params={"access_token": self.access_token})
+                me_res = await client.get(me_url, headers={"Authorization": f"Bearer {self.access_token}"})
                 if me_res.status_code != 200:
                     err_json = me_res.json().get("error", {})
                     err_msg = err_json.get("message", me_res.text)
@@ -106,7 +106,7 @@ class FacebookPublisherService:
                     # Attempt to resolve Page access token from User token via /me/accounts
                     accounts_res = await client.get(
                         f"{self.graph_url}/me/accounts",
-                        params={"access_token": self.access_token}
+                        headers={"Authorization": f"Bearer {self.access_token}"}
                     )
                     resolved_page_token = None
                     if accounts_res.status_code == 200:
@@ -138,10 +138,8 @@ class FacebookPublisherService:
                 page_url = f"{self.graph_url}/{self.page_id}"
                 page_res = await client.get(
                     page_url,
-                    params={
-                        "fields": "id,name,category,link,is_published",
-                        "access_token": effective_token
-                    }
+                    headers={"Authorization": f"Bearer {effective_token}"},
+                    params={"fields": "id,name,category,link,is_published"}
                 )
                 if page_res.status_code != 200:
                     err_json = page_res.json().get("error", {})
@@ -158,7 +156,8 @@ class FacebookPublisherService:
                 try:
                     v_res = await client.get(
                         f"{self.video_url}/{self.page_id}/videos",
-                        params={"access_token": effective_token, "limit": 1}
+                        headers={"Authorization": f"Bearer {effective_token}"},
+                        params={"limit": 1}
                     )
                     video_endpoint_ok = (v_res.status_code == 200)
                 except Exception:
@@ -200,13 +199,13 @@ class FacebookPublisherService:
 
         url = f"{self.graph_url}/{video_id}"
         params = {
-            "fields": "id,published,status,description,created_time",
-            "access_token": self.access_token
+            "fields": "id,published,status,description,created_time"
         }
+        headers = {"Authorization": f"Bearer {self.access_token}"}
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.get(url, params=params)
+                res = await client.get(url, params=params, headers=headers)
                 if res.status_code == 200:
                     return res.json()
                 return {"published": False, "error": f"HTTP {res.status_code}: {res.text}"}
@@ -231,13 +230,13 @@ class FacebookPublisherService:
         url = f"{self.video_url}/{self.page_id}/videos"
         params = {
             "fields": "id,created_time,published,title,description",
-            "access_token": self.access_token,
             "limit": 15
         }
+        headers = {"Authorization": f"Bearer {self.access_token}"}
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.get(url, params=params)
+                res = await client.get(url, params=params, headers=headers)
                 if res.status_code != 200:
                     logger.warning(f"Failed to query recent videos from Facebook: {res.status_code}")
                     return True, None, None  # Allow upload if query temporarily fails
@@ -297,13 +296,13 @@ class FacebookPublisherService:
         url = f"{self.video_url}/{self.page_id}/videos"
         params = {
             "fields": "id,title,description,created_time,published,status",
-            "access_token": self.access_token,
             "limit": 25
         }
+        headers = {"Authorization": f"Bearer {self.access_token}"}
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.get(url, params=params)
+                res = await client.get(url, params=params, headers=headers)
                 if res.status_code != 200:
                     return None
 
@@ -433,7 +432,7 @@ class FacebookPublisherService:
             )
 
         upload_endpoint = f"{self.video_url}/{self.page_id}/videos"
-        params = {"access_token": self.access_token}
+        headers = {"Authorization": f"Bearer {self.access_token}"}
         data = {
             "title": title[:250],
             "description": clean_desc,
@@ -454,7 +453,7 @@ class FacebookPublisherService:
                     }
                     response = await client.post(
                         upload_endpoint,
-                        params=params,
+                        headers=headers,
                         data=data,
                         files=files
                     )
