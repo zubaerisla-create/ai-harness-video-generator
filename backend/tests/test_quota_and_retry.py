@@ -184,21 +184,7 @@ async def test_publish_job_blocks_when_daily_quota_full(tmp_path: Path):
     """Verify that publish_job aborts before attempting upload when daily quota is full."""
     async with AsyncSessionLocal() as session:
         job_repo = JobRepository(session)
-        daily_repo = DailyPublicationRepository(session)
         
-        from zoneinfo import ZoneInfo
-        tz = ZoneInfo(settings.TIMEZONE)
-        local_date_str = datetime.now(tz).strftime("%Y-%m-%d")
-        
-        # Ensure daily quota is full for today
-        for i in range(1, 6):
-            await daily_repo.record_publication(
-                local_date=local_date_str,
-                slot=f"sim_slot_{i}",
-                video_id=f"sim_vid_{i}",
-                timezone=settings.TIMEZONE
-            )
-            
         # Create a mock video job
         job = await job_repo.create_job({"prompt": "Testing atomic quota block"})
         video_file = tmp_path / "vid_quota.mp4"
@@ -221,7 +207,13 @@ async def test_publish_job_blocks_when_daily_quota_full(tmp_path: Path):
             "validate_for_upload",
             return_value=MagicMock(is_valid=True)
         ):
-            # Attempt to publish -> should be blocked by quota before hitting publisher
-            success = await orchestrator.publish_job(job.id)
-            assert success is False
+            with patch.object(
+                DailyPublicationRepository,
+                "get_today_count",
+                new_callable=AsyncMock,
+                return_value=5
+            ):
+                # Attempt to publish -> should be blocked by quota before hitting publisher
+                success = await orchestrator.publish_job(job.id)
+                assert success is False
 
